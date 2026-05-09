@@ -123,8 +123,7 @@ textarea::placeholder{color:var(--text3);}
 </div>
 
 <script>
-var AKEY='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';
-var APIURL='https://api.anthropic.com/v1/messages';
+var APIURL='https://dad-assistant-proxy.hilliardbuffshire.workers.dev';
 var SYSTEM='당신은 친절한 AI 비서입니다. 한국어로 답변합니다. 사용자가 법률 관련 질문(특히 토지, 환경, 농지, 부동산, 소송, 분쟁, 계약 등)을 하면 한국 법률 전문가로서 관련 법령, 절차, 권리, 대응 방법을 상세히 안내하고, 마지막에 "※ 이 내용은 참고용이며 중요한 결정은 변호사와 상담하세요."라고 명시하세요. 사용자가 이메일, 편지, 답장 작성을 요청하면 정중하고 자연스러운 한국어로 작성하고 제목도 포함하세요. 그 외 질문에는 친절하고 명확하게 답변하세요.';
 
 var recog=null, isRec=false, photoB64=null;
@@ -185,7 +184,7 @@ function setSt(msg,active){
 function callClaude(body,cb){
   fetch(APIURL,{
     method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':AKEY,'anthropic-version':'2023-06-01','anthropic-dangerous-allow-browser':'true'},
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)
   }).then(function(r){return r.json();}).then(function(data){
     if(data.error)throw new Error(data.error.message);
