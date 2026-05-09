@@ -123,7 +123,8 @@ textarea::placeholder{color:var(--text3);}
 </div>
 
 <script>
-var APIURL='https://dad-assistant-proxy.hilliardbuffshire.workers.dev';
+var GKEY='AIzaSyDjO68VCISq1yiZvKFR2D-pxTInug9tmLk';
+var GURL='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 var SYSTEM='당신은 친절한 AI 비서입니다. 한국어로 답변합니다. 사용자가 법률 관련 질문(특히 토지, 환경, 농지, 부동산, 소송, 분쟁, 계약 등)을 하면 한국 법률 전문가로서 관련 법령, 절차, 권리, 대응 방법을 상세히 안내하고, 마지막에 "※ 이 내용은 참고용이며 중요한 결정은 변호사와 상담하세요."라고 명시하세요. 사용자가 이메일, 편지, 답장 작성을 요청하면 정중하고 자연스러운 한국어로 작성하고 제목도 포함하세요. 그 외 질문에는 친절하고 명확하게 답변하세요.';
 
 var recog=null, isRec=false, photoB64=null, savedText='';
@@ -188,14 +189,18 @@ function setSt(msg,active){
   el.className='st-bar'+(active?' active':'');
 }
 
-function callClaude(body,cb){
-  fetch(APIURL,{
+function callGemini(contents,system,cb){
+  var body={contents:contents,generationConfig:{maxOutputTokens:1500}};
+  if(system)body.systemInstruction={parts:[{text:system}]};
+  fetch(GURL+'?key='+GKEY,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)
-  }).then(function(r){return r.json();}).then(function(data){
-    if(data.error)throw new Error(data.error.message);
-    cb(null,data.content.map(function(b){return b.text||'';}).join(''));
+  }).then(function(r){return r.text();}).then(function(t){
+    if(!t)throw new Error('응답이 없습니다.');
+    var d=JSON.parse(t);
+    if(d.error)throw new Error(d.error.message);
+    cb(null,d.candidates[0].content.parts[0].text);
   }).catch(function(e){cb(e.message,null);});
 }
 
@@ -205,16 +210,15 @@ function sendMain(){
   if(isRec)stopRec();
   showLoader('ldMain',true);
   document.getElementById('resMain').style.display='none';
-  callClaude({
-    model:'claude-haiku-4-5-20251001',
-    max_tokens:1500,
-    system:SYSTEM,
-    messages:[{role:'user',content:text}]
-  },function(err,result){
-    document.getElementById('rbMain').textContent=err?'오류: '+err:result;
-    document.getElementById('resMain').style.display='block';
-    showLoader('ldMain',false);
-  });
+  callGemini(
+    [{role:'user',parts:[{text:text}]}],
+    SYSTEM,
+    function(err,result){
+      document.getElementById('rbMain').textContent=err?'오류: '+err:result;
+      document.getElementById('resMain').style.display='block';
+      showLoader('ldMain',false);
+    }
+  );
 }
 
 function compressPhoto(dataUrl,callback){
@@ -254,18 +258,18 @@ function autoExtract(){
   var re=new RegExp('data:(image[^;]+);');
   var m=photoB64.match(re);
   var mt=m?m[1]:'image/jpeg';
-  callClaude({
-    model:'claude-haiku-4-5-20251001',
-    max_tokens:1500,
-    messages:[{role:'user',content:[
-      {type:'image',source:{type:'base64',media_type:mt,data:b64}},
-      {type:'text',text:'이 이미지에서 손으로 쓴 글씨나 인쇄된 텍스트를 빠짐없이 정확하게 읽어서 텍스트로만 변환해주세요. 설명 없이 텍스트 내용만 출력하세요.'}
-    ]}]
-  },function(err,result){
-    document.getElementById('rbPhoto').textContent=err?'오류: '+err:result;
-    document.getElementById('resPhoto').style.display='block';
-    showLoader('ldPhoto',false);
-  });
+  callGemini(
+    [{role:'user',parts:[
+      {inlineData:{mimeType:mt,data:b64}},
+      {text:'이 이미지에서 손으로 쓴 글씨나 인쇄된 텍스트를 빠짐없이 정확하게 읽어서 텍스트로만 변환해주세요. 설명 없이 텍스트 내용만 출력하세요.'}
+    ]}],
+    null,
+    function(err,result){
+      document.getElementById('rbPhoto').textContent=err?'오류: '+err:result;
+      document.getElementById('resPhoto').style.display='block';
+      showLoader('ldPhoto',false);
+    }
+  );
 }
 
 function clearPhoto(){
