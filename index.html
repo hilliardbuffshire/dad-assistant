@@ -55,19 +55,21 @@ textarea::placeholder{color:var(--text3);}
 .chat-a{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;box-shadow:var(--sh);}
 .chat-a-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;}
 .chat-a-text{font-size:19px;line-height:1.8;color:var(--text);white-space:pre-wrap;margin-bottom:1rem;}
-.btn-print{width:100%;padding:12px;background:#F5F0FF;border:1px solid #C4B0F0;border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#5B35B0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;margin-top:.5rem;}
-.btn-print:hover{opacity:.85;}
+.btn-pair{display:flex;gap:8px;margin-top:.5rem;}
+.btn-pair .btn-copy{flex:1;margin-top:0;}
+.btn-print-single{flex:1;padding:12px;background:#F5F0FF;border:1px solid #C4B0F0;border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#5B35B0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;-webkit-tap-highlight-color:transparent;}
+.btn-print-single:hover{opacity:.85;}
+#printFrame{display:none;}
 @media print{
-  .mic-card,.ta-wrap,.btn-ask,.btn-row2,.loader,.photo-card,.warn,.not-sup,.hdr,.btn-copy,.no-print{display:none!important;}
-  body{background:#fff!important;}
-  .wrap{max-width:100%!important;padding:0 1cm!important;}
-  .chat-log{gap:1.2rem!important;margin-top:0!important;}
-  .chat-q{font-size:12pt!important;background:#EBF0FF!important;border:1pt solid #A5B8F0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .chat-q-label{font-size:9pt!important;}
-  .chat-a{box-shadow:none!important;border:1pt solid #ddd!important;page-break-inside:avoid;}
-  .chat-a-text{font-size:12pt!important;line-height:1.7!important;}
-  .chat-a-label{font-size:9pt!important;}
-  .btn-print{display:none!important;}
+  @page{size:A4 portrait;margin:2cm 2cm 2.5cm 2cm;}
+  .wrap{display:none!important;}
+  #printFrame{display:block!important;}
+  #printFrame .pf-meta{font-size:9pt;color:#666;margin-bottom:10pt;}
+  #printFrame .pf-q-label{font-size:10pt;font-weight:600;color:#333;margin-bottom:6pt;}
+  #printFrame .pf-q{font-size:15pt;line-height:1.7;white-space:pre-wrap;color:#000;margin-bottom:18pt;}
+  #printFrame .pf-divider{border:none;border-top:1.5pt solid #999;margin:0 0 14pt 0;}
+  #printFrame .pf-a-label{font-size:10pt;font-weight:600;color:#333;margin-bottom:6pt;}
+  #printFrame .pf-a{font-size:15pt;line-height:1.75;white-space:pre-wrap;color:#000;}
 }
 .btn-copy{width:100%;padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;-webkit-tap-highlight-color:transparent;}
 .btn-copy:hover{opacity:.85;}
@@ -665,8 +667,7 @@ var SYSTEM='당신은 정상문 씨의 실질적인 법률 비서입니다. 항�
   +'- 답변에서 #, ##, **, *, 불릿(•) 등 마크다운 기호를 절대 사용하지 마세요. 순수 텍스트로만 작성하세요.\n'
   +'- 항목을 나열할 때는 1. 2. 3. 또는 가. 나. 다. 형식을 사용하세요.\n'
   +'- 편지·서신·내용증명·법률 문서 작성 요청 시: 문서 본문만 작성하세요. 앞뒤로 설명, 안내 문구(예: "이렇게 보내시면 됩니다", "다음과 같이 작성했습니다" 등)를 절대 추가하지 마세요. 복사하면 바로 편지가 되어야 합니다.\n\n'
-  +'소송 자료가 제공된 경우 반드시 해당 자료의 사실관계를 바탕으로 답변하고, 자료에 없는 내용은 없다고 밝히세요.\n\n'
-  +'법률 관련 답변 마지막에는 "※ 중요한 결정은 반드시 담당 변호사(법무법인 세일 허범행)와 상담하세요."를 명시하세요.';
+  +'소송 자료가 제공된 경우 반드시 해당 자료의 사실관계를 바탕으로 답변하고, 자료에 없는 내용은 없다고 밝히세요.';
 
 var recog=null, isRec=false, photoB64=null, finalTranscript='';
 var chatHistory=[];
@@ -693,8 +694,7 @@ function escHtml(s){
 function renderHistory(){
   var log=document.getElementById('chatLog');
   if(!chatHistory.length){log.innerHTML='';return;}
-  var html='<button class="btn-print no-print" onclick="printChat()">🖨️ 인쇄하기</button>';
-  html+='<div class="chat-log">';
+  var html='<div class="chat-log">';
   for(var i=0;i<chatHistory.length;i++){
     var item=chatHistory[i];
     if(item.role==='user'){
@@ -704,14 +704,32 @@ function renderHistory(){
       var safeText=item.text.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
       html+='<div class="chat-a"><div class="chat-a-label">비서 답변 · '+escHtml(item.time)+'</div>'
            +'<div class="chat-a-text">'+escHtml(item.text)+'</div>'
-           +'<button class="btn-copy no-print" onclick="copyChat(this,\''+safeText+'\')">📋 복사하기</button></div>';
+           +'<div class="btn-pair">'
+           +'<button class="btn-copy" onclick="copyChat(this,\''+safeText+'\')">📋 복사하기</button>'
+           +'<button class="btn-print-single" onclick="printSingle('+i+')">🖨️ 인쇄하기</button>'
+           +'</div></div>';
     }
   }
   html+='</div>';
   log.innerHTML=html;
 }
 
-function printChat(){window.print();}
+function printSingle(idx){
+  var asst=chatHistory[idx];
+  var user=null;
+  for(var i=idx-1;i>=0;i--){if(chatHistory[i].role==='user'){user=chatHistory[i];break;}}
+  var frame=document.getElementById('printFrame');
+  var html='';
+  if(user){
+    html+='<div class="pf-q-label">질문 · '+escHtml(user.time)+'</div>';
+    html+='<div class="pf-q">'+escHtml(user.text)+'</div>';
+    html+='<div class="pf-divider"></div>';
+  }
+  html+='<div class="pf-a-label">답변 · '+escHtml(asst.time)+'</div>';
+  html+='<div class="pf-a">'+escHtml(asst.text)+'</div>';
+  frame.innerHTML=html;
+  window.print();
+}
 
 function copyChat(btn,text){
   var decoded=text.replace(/\\n/g,'\n').replace(/\\'/g,"'").replace(/\\\\/g,'\\');
@@ -911,5 +929,6 @@ document.addEventListener('DOMContentLoaded',function(){
   });
 });
 </script>
+<div id="printFrame"></div>
 </body>
 </html>
