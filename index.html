@@ -48,7 +48,13 @@ textarea::placeholder{color:var(--text3);}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
 .result-card{display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem;box-shadow:var(--sh);}
 .result-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;}
-.result-text{font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap;margin-bottom:1rem;}
+.result-text{font-size:19px;line-height:1.8;color:var(--text);white-space:pre-wrap;margin-bottom:1rem;}
+.chat-log{display:flex;flex-direction:column;gap:1.25rem;margin-top:1rem;}
+.chat-q-wrap{} .chat-q-label{font-size:11px;font-weight:500;color:var(--text3);margin-bottom:4px;}
+.chat-q{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;font-size:15px;line-height:1.7;color:var(--text2);white-space:pre-wrap;}
+.chat-a{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;box-shadow:var(--sh);}
+.chat-a-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;}
+.chat-a-text{font-size:19px;line-height:1.8;color:var(--text);white-space:pre-wrap;margin-bottom:1rem;}
 .btn-copy{width:100%;padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;-webkit-tap-highlight-color:transparent;}
 .btn-copy:hover{opacity:.85;}
 .photo-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem;box-shadow:var(--sh);}
@@ -86,16 +92,13 @@ textarea::placeholder{color:var(--text3);}
   <button class="btn-ask" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
 
   <div class="btn-row2">
-    <button class="btn-sm" onclick="clearMain()">🔄 초기화</button>
+    <button class="btn-sm" onclick="clearInput()">🔄 입력 지우기</button>
+    <button class="btn-sm" onclick="clearHistory()">🗑️ 대화내역 삭제</button>
   </div>
 
   <div class="loader" id="ldMain"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>답변 생성 중...</span></div>
 
-  <div class="result-card" id="resMain">
-    <div class="result-label">비서 답변</div>
-    <div class="result-text" id="rbMain"></div>
-    <button class="btn-copy" onclick="copyRes('rbMain',this)">📋 복사하기 (Daum 메일에 붙여넣기)</button>
-  </div>
+  <div id="chatLog"></div>
 
   <div style="margin-top:1.5rem;">
     <div class="photo-card">
@@ -643,13 +646,78 @@ var CASE_CONTEXT=`==============================================================
   · 금호타이어 대리점, 1988.12.01.~1992.12.31. 운영 후 폐업
   · 임대인: 김용덕 (여수시 공화동 1222-1 소유자)`;
 var SYSTEM='당신은 친절하고 유능한 AI 법률 비서입니다. 항상 한국어로 답변합니다.\n\n'
+  +'[형식 규칙]\n'
+  +'- 답변에서 #, ##, **, *, 불릿(•) 등 마크다운 기호를 절대 사용하지 마세요. 순수 텍스트로만 작성하세요.\n'
+  +'- 항목을 나열할 때는 1. 2. 3. 또는 가. 나. 다. 형식을 사용하세요.\n'
+  +'- 편지·서신·내용증명·법률 문서 작성 요청 시: 문서 본문만 작성하세요. 앞뒤로 설명, 안내 문구(예: "이렇게 보내시면 됩니다", "다음과 같이 작성했습니다" 등)를 절대 추가하지 마세요. 복사하면 바로 편지가 되어야 합니다.\n\n'
   +'소송·법률 관련 질문(토지, 환경, 농지, 부동산, 소송, 항소, 분쟁, 계약 등)에는 한국 법률 전문가로서 '
   +'관련 법령·판례·절차·권리·대응 방법을 구체적으로 안내하고, 마지막에 '
   +'"※ 이 내용은 참고용이며 중요한 결정은 반드시 변호사와 상담하세요."를 명시하세요.\n\n'
-  +'이메일·편지·답장·법률 문서 작성 요청에는 정중하고 명확한 한국어로 작성하고 제목도 포함하세요.\n\n'
   +'소송 자료가 제공된 경우 반드시 해당 자료의 사실관계를 바탕으로 답변하세요.';
 
 var recog=null, isRec=false, photoB64=null, finalTranscript='';
+var chatHistory=[];
+
+function loadHistory(){
+  try{var s=localStorage.getItem('dad_chat');if(s)chatHistory=JSON.parse(s);}
+  catch(e){chatHistory=[];}
+  renderHistory();
+}
+
+function saveHistory(){
+  try{localStorage.setItem('dad_chat',JSON.stringify(chatHistory));}catch(e){}
+}
+
+function timeStr(){
+  var d=new Date();
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderHistory(){
+  var log=document.getElementById('chatLog');
+  if(!chatHistory.length){log.innerHTML='';return;}
+  var html='<div class="chat-log">';
+  for(var i=0;i<chatHistory.length;i++){
+    var item=chatHistory[i];
+    if(item.role==='user'){
+      html+='<div class="chat-q-wrap"><div class="chat-q-label">나 · '+escHtml(item.time)+'</div>'
+           +'<div class="chat-q">'+escHtml(item.text)+'</div></div>';
+    } else {
+      var safeText=item.text.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+      html+='<div class="chat-a"><div class="chat-a-label">비서 답변 · '+escHtml(item.time)+'</div>'
+           +'<div class="chat-a-text">'+escHtml(item.text)+'</div>'
+           +'<button class="btn-copy" onclick="copyChat(this,\''+safeText+'\')">📋 복사하기</button></div>';
+    }
+  }
+  html+='</div>';
+  log.innerHTML=html;
+}
+
+function copyChat(btn,text){
+  var decoded=text.replace(/\\n/g,'\n').replace(/\\'/g,"'").replace(/\\\\/g,'\\');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(decoded).then(function(){
+      var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
+    });
+  } else {
+    var ta=document.createElement('textarea');ta.value=decoded;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
+  }
+}
+
+function clearHistory(){
+  if(!confirm('대화내역을 전부 삭제할까요?'))return;
+  chatHistory=[];saveHistory();renderHistory();
+}
+
+function clearInput(){
+  document.getElementById('taMain').value='';
+  setSt('버튼을 누르고 말씀해 주세요',false);
+}
 
 function initSpeech(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -728,13 +796,20 @@ function sendMain(){
   var text=document.getElementById('taMain').value.trim();
   if(!text){setSt('⚠️ 내용을 입력하거나 말씀해 주세요.',false);return;}
   if(isRec)stopRec();
+  var t=timeStr();
+  chatHistory.push({role:'user',text:text,time:t});
+  saveHistory();renderHistory();
+  document.getElementById('taMain').value='';
+  finalTranscript='';
+  setSt('답변 생성 중...',true);
   showLoader('ldMain',true);
-  document.getElementById('resMain').style.display='none';
   var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'');
   callClaude([{role:'user',content:text}],sys,function(err,result){
-    document.getElementById('rbMain').textContent=err?'오류: '+err:result;
-    document.getElementById('resMain').style.display='block';
     showLoader('ldMain',false);
+    chatHistory.push({role:'assistant',text:err?'오류: '+err:result,time:t});
+    saveHistory();renderHistory();
+    setSt('✅ 답변 완료. 아래를 확인하세요.',false);
+    window.scrollTo(0,document.body.scrollHeight);
   });
 }
 
@@ -791,13 +866,6 @@ function clearPhoto(){
   document.getElementById('photoInput').value='';
 }
 
-function clearMain(){
-  document.getElementById('taMain').value='';
-  document.getElementById('resMain').style.display='none';
-  document.getElementById('rbMain').textContent='';
-  setSt('버튼을 누르고 말씀해 주세요',false);
-}
-
 function copyRes(id,btn){
   var text=document.getElementById(id).textContent;
   if(navigator.clipboard){
@@ -813,6 +881,7 @@ function copyRes(id,btn){
 function showLoader(id,show){document.getElementById(id).className='loader'+(show?' on':'');}
 
 document.addEventListener('DOMContentLoaded',function(){
+  loadHistory();
   var uz=document.getElementById('uploadZone');
   var pi=document.getElementById('photoInput');
   uz.addEventListener('click',function(){pi.click();});
