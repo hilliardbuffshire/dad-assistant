@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>아버지 AI 비서</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#F7F6F2;--surface:#FFFFFF;--surface2:#F0EFE9;--border:#DDDBD2;--border2:#B8B5A8;
+  --text:#1A1917;--text2:#66635A;--text3:#9C9990;
+  --green:#2A5C14;--green-bg:#EAF2E5;--green-bd:#8DBD75;
+  --red:#8B2000;--red-bg:#FDF0EC;--red-bd:#E89070;
+  --amber:#7A4800;--amber-bg:#FDF6E8;--amber-bd:#DEB96A;
+  --r:12px;--r-lg:18px;--sh:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04);
+}
+body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0;}
+.wrap{max-width:640px;margin:0 auto;padding:1.5rem 1rem 4rem;}
+.hdr{text-align:center;margin-bottom:2rem;}
+.hdr h1{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.3px;}
+.mic-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.75rem 1.25rem;margin-bottom:1rem;text-align:center;box-shadow:var(--sh);}
+.mic-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
+.mic-btn{width:100px;height:100px;border-radius:50%;border:2px solid var(--border2);background:var(--surface2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:all .2s;-webkit-tap-highlight-color:transparent;}
+.mic-btn:hover{border-color:var(--green-bd);background:var(--green-bg);}
+.mic-icon{font-size:36px;line-height:1;}
+.mic-lbl{font-size:11px;font-weight:500;color:var(--text2);}
+.mic-btn.rec{border-color:var(--red-bd);background:var(--red-bg);animation:pulse 1.2s ease-in-out infinite;}
+.mic-btn.rec .mic-lbl{color:var(--red);}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(200,70,30,.2);}50%{box-shadow:0 0 0 14px rgba(200,70,30,0);}}
+.st-bar{font-size:13px;color:var(--text2);padding:8px 16px;background:var(--surface2);border-radius:999px;border:1px solid var(--border);min-width:220px;}
+.st-bar.active{color:var(--red);border-color:var(--red-bd);background:var(--red-bg);}
+.ta-wrap{margin-bottom:1rem;}
+.ta-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:6px;}
+textarea{width:100%;min-height:90px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:15px;font-family:'Noto Sans KR',sans-serif;color:var(--text);line-height:1.65;resize:vertical;}
+textarea:focus{outline:none;border-color:var(--border2);}
+textarea::placeholder{color:var(--text3);}
+.btn-ask{width:100%;padding:14px;background:var(--text);border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
+.btn-ask:hover{opacity:.85;}.btn-ask:active{opacity:.7;}
+.btn-row2{display:flex;gap:8px;}
+.btn-sm{flex:1;padding:11px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:13px;font-weight:500;font-family:'Noto Sans KR',sans-serif;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;-webkit-tap-highlight-color:transparent;}
+.btn-sm:hover{background:var(--surface2);}
+.loader{display:none;align-items:center;gap:10px;font-size:13px;color:var(--text2);padding:8px 0 4px;justify-content:center;}
+.loader.on{display:flex;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--text3);animation:bounce 1s ease-in-out infinite;}
+.dot:nth-child(2){animation-delay:.15s;}.dot:nth-child(3){animation-delay:.3s;}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+.result-card{display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem;box-shadow:var(--sh);}
+.result-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;}
+.result-text{font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap;margin-bottom:1rem;}
+.btn-copy{width:100%;padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s;-webkit-tap-highlight-color:transparent;}
+.btn-copy:hover{opacity:.85;}
+.photo-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem;box-shadow:var(--sh);}
+.photo-card .ta-label{margin-bottom:10px;}
+.upload-zone{border:2px dashed var(--border2);border-radius:var(--r);padding:2rem 1rem;text-align:center;cursor:pointer;transition:all .18s;background:var(--surface2);-webkit-tap-highlight-color:transparent;}
+.upload-zone:hover,.upload-zone.drag{background:var(--green-bg);border-color:var(--green-bd);}
+.upload-icon{font-size:36px;margin-bottom:8px;}
+.upload-zone p{font-size:14px;color:var(--text2);}
+.upload-zone p.sub{font-size:12px;color:var(--text3);margin-top:3px;}
+.preview-img{max-width:100%;border-radius:var(--r);border:1px solid var(--border);margin-bottom:.75rem;display:none;}
+.warn{display:flex;gap:9px;align-items:flex-start;padding:10px 13px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--r);font-size:12px;color:var(--amber);margin-bottom:1rem;line-height:1.55;}
+.not-sup{display:none;padding:10px 13px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:var(--r);font-size:13px;color:var(--red);margin-bottom:1rem;}
+.section-gap{margin-bottom:1rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr"><h1>🎙️ 아버지 AI 비서</h1></div>
+  <div class="mic-card">
+    <div class="mic-wrap">
+      <button class="mic-btn" id="micBtn" onclick="toggleRec()" aria-label="음성 입력">
+        <div class="mic-icon">🎤</div>
+        <span class="mic-lbl" id="micLbl">누르고 말하기</span>
+      </button>
+      <div class="st-bar" id="stBar">버튼을 누르고 말씀해 주세요</div>
+    </div>
+  </div>
+  <div id="notSup" class="not-sup">⚠️ 크롬(Chrome) 브라우저를 사용해 주세요. 음성 인식은 크롬에서만 작동합니다.</div>
+  <div class="ta-wrap section-gap">
+    <div class="ta-label">인식된 내용 (수정 가능)</div>
+    <textarea id="taMain" placeholder="말씀하시면 여기에 내용이 나타납니다. 직접 타이핑도 가능합니다.&#10;&#10;예시) 집주인이 보증금을 안 돌려준다&#10;예시) 이웃 농지와의 경계 분쟁이 있다&#10;예시) 아들에게 이메일 답장을 써줘"></textarea>
+  </div>
+  <button class="btn-ask" onclick="sendMain()"><span>✉️</span> Claude에게 물어보기</button>
+  <div class="btn-row2 section-gap">
+    <button class="btn-sm" onclick="clearMain()">🔄 초기화</button>
+  </div>
+  <div class="loader" id="ldMain"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>답변 생성 중...</span></div>
+  <div class="result-card" id="resMain">
+    <div class="result-label">Claude 답변</div>
+    <div class="result-text" id="rbMain"></div>
+    <button class="btn-copy" onclick="copyRes('rbMain',this)">📋 복사하기 (Daum 메일에 붙여넣기)</button>
+  </div>
+  <div style="margin-top:1.5rem;">
+    <div class="photo-card">
+      <div class="ta-label">📷 사진으로 글씨 인식</div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">A4 종이에 쓴 글씨를 핸드폰으로 찍어 올리면 자동으로 텍스트로 변환합니다.</p>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('photoInput').click()">
+        <div class="upload-icon">📄</div>
+        <p>사진을 눌러 선택하세요</p>
+        <p class="sub">핸드폰 카메라 또는 갤러리에서 선택 가능</p>
+      </div>
+      <img class="preview-img" id="previewImg" alt="업로드 사진">
+      <div id="photoActions" style="display:none;">
+        <div class="loader" id="ldPhoto" style="margin-bottom:.5rem;"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>사진 분석 중...</span></div>
+        <div class="result-card" id="resPhoto" style="margin-top:0;display:none;">
+          <div class="result-label">추출된 텍스트</div>
+          <div class="result-text" id="rbPhoto"></div>
+          <button class="btn-copy" onclick="copyRes('rbPhoto',this)">📋 텍스트 복사</button>
+        </div>
+        <div style="margin-top:.75rem;"><button class="btn-sm" style="width:100%;" onclick="clearPhoto()">🔄 다른 사진 올리기</button></div>
+      </div>
+    </div>
+    <div class="warn">⚖️ <span>법률 관련 답변은 <strong>참고용</strong>입니다. 중요한 결정은 반드시 변호사와 상담하세요.</span></div>
+  </div>
+</div>
+<script>
+const API='/.netlify/functions/claude';
+const SYSTEM=`당신은 친절한 AI 비서입니다. 한국어로 답변합니다.
+사용자가 법률 관련 질문(특히 토지, 환경, 농지, 부동산, 소송, 분쟁, 계약 등)을 하면 한국 법률 전문가로서 관련 법령, 절차, 권리, 대응 방법을 상세히 안내하고, 마지막에 "※ 이 내용은 참고용이며 중요한 결정은 변호사와 상담하세요."라고 명시하세요.
+사용자가 이메일, 편지, 답장 작성을 요청하면 정중하고 자연스러운 한국어로 작성하고 제목도 포함하세요.
+그 외 질문에는 친절하고 명확하게 답변하세요.`;
+let recog=null,isRec=false;
+function initSpeech(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){document.getElementById('notSup').style.display='block';return false;}
+  recog=new SR();recog.lang='ko-KR';recog.continuous=true;recog.interimResults=true;
+  recog.onresult=(e)=>{
+    let final='',interim='';
+    for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript;}
+    document.getElementById('taMain').value=final+interim;setSt('🎤 인식 중...',true);
+  };
+  recog.onerror=(e)=>{
+    let m='오류가 발생했습니다.';
+    if(e.error==='not-allowed')m='마이크 권한을 허용해 주세요.';
+    else if(e.error==='no-speech')m='음성이 감지되지 않았습니다.';
+    setSt(m,false);stopRec();
+  };
+  recog.onend=()=>{if(isRec)recog.start();};
+  return true;
+}
+function toggleRec(){if(isRec)stopRec();else{if(!recog&&!initSpeech())return;recog.start();isRec=true;document.getElementById('micBtn').classList.add('rec');document.getElementById('micLbl').textContent='멈추기';setSt('🔴 듣고 있습니다...',true);}}
+function stopRec(){if(recog)recog.stop();isRec=false;document.getElementById('micBtn').classList.remove('rec');document.getElementById('micLbl').textContent='누르고 말하기';const txt=document.getElementById('taMain').value.trim();setSt(txt?'✅ 인식 완료. 아래 버튼을 눌러주세요.':'버튼을 누르고 말씀해 주세요',false);}
+function setSt(msg,active){const el=document.getElementById('stBar');el.textContent=msg;el.className='st-bar'+(active?' active':'');}
+async function sendMain(){
+  const text=document.getElementById('taMain').value.trim();
+  if(!text){setSt('⚠️ 내용을 입력하거나 말씀해 주세요.',false);return;}
+  if(isRec)stopRec();
+  showLoader('ldMain',true);document.getElementById('resMain').style.display='none';
+  try{
+    const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,system:SYSTEM,messages:[{role:'user',content:text}]})});
+    if(!res.ok)throw new Error('서버 오류 '+res.status);
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+    document.getElementById('rbMain').textContent=data.content?.map(b=>b.text||'').join('')||'응답 없음';
+    document.getElementById('resMain').style.display='block';
+  }catch(err){document.getElementById('rbMain').textContent='오류: '+err.message;document.getElementById('resMain').style.display='block';}
+  showLoader('ldMain',false);
+}
+let photoB64=null;
+function handlePhoto(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    photoB64=e.target.result;
+    document.getElementById('previewImg').src=photoB64;document.getElementById('previewImg').style.display='block';
+    document.getElementById('uploadZone').style.display='none';document.getElementById('photoActions').style.display='block';
+    document.getElementById('resPhoto').style.display='none';autoExtract();
+  };
+  reader.readAsDataURL(file);
+}
+async function autoExtract(){
+  showLoader('ldPhoto',true);document.getElementById('resPhoto').style.display='none';
+  try{
+    const b64=photoB64.split(',')[1];const mt=(photoB64.match(/data:(image/[^;]+);/)||[])[1]||'image/jpeg';
+    const res=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'이 이미지에서 손으로 쓴 글씨나 인쇄된 텍스트를 빠짐없이 정확하게 읽어서 텍스트로만 변환해주세요. 설명 없이 텍스트 내용만 출력하세요.'}]}]})});
+    if(!res.ok)throw new Error('서버 오류 '+res.status);
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+    document.getElementById('rbPhoto').textContent=data.content?.map(b=>b.text||'').join('')||'인식 실패';
+    document.getElementById('resPhoto').style.display='block';
+  }catch(err){document.getElementById('rbPhoto').textContent='오류: '+err.message;document.getElementById('resPhoto').style.display='block';}
+  showLoader('ldPhoto',false);
+}
+function clearPhoto(){photoB64=null;document.getElementById('previewImg').style.display='none';document.getElementById('previewImg').src='';document.getElementById('uploadZone').style.display='block';document.getElementById('photoActions').style.display='none';document.getElementById('photoInput').value='';}
+function clearMain(){document.getElementById('taMain').value='';document.getElementById('resMain').style.display='none';document.getElementById('rbMain').textContent='';setSt('버튼을 누르고 말씀해 주세요',false);}
+function copyRes(id,btn){
+  const text=document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(()=>{const orig=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(()=>{btn.textContent=orig;},2000);}).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);const orig=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(()=>{btn.textContent=orig;},2000);});
+}
+function showLoader(id,show){document.getElementById(id).className='loader'+(show?' on':'');}
+const dz=document.getElementById('uploadZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const file=e.dataTransfer.files[0];if(file&&file.type.startsWith('image/')){const inp=document.getElementById('photoInput');const dt=new DataTransfer();dt.items.add(file);inp.files=dt.files;handlePhoto(inp);}});
+</script>
+</body>
+</html>
