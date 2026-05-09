@@ -83,7 +83,7 @@ textarea::placeholder{color:var(--text3);}
     <textarea id="taMain" placeholder="말씀하시면 여기에 내용이 나타납니다."></textarea>
   </div>
 
-  <button class="btn-ask" onclick="sendMain()"><span>✉️</span> Claude에게 물어보기</button>
+  <button class="btn-ask" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
 
   <div class="btn-row2">
     <button class="btn-sm" onclick="clearMain()">🔄 초기화</button>
@@ -126,14 +126,14 @@ textarea::placeholder{color:var(--text3);}
 var APIURL='https://dad-assistant-proxy.hilliardbuffshire.workers.dev';
 var SYSTEM='당신은 친절한 AI 비서입니다. 한국어로 답변합니다. 사용자가 법률 관련 질문(특히 토지, 환경, 농지, 부동산, 소송, 분쟁, 계약 등)을 하면 한국 법률 전문가로서 관련 법령, 절차, 권리, 대응 방법을 상세히 안내하고, 마지막에 "※ 이 내용은 참고용이며 중요한 결정은 변호사와 상담하세요."라고 명시하세요. 사용자가 이메일, 편지, 답장 작성을 요청하면 정중하고 자연스러운 한국어로 작성하고 제목도 포함하세요. 그 외 질문에는 친절하고 명확하게 답변하세요.';
 
-var recog=null, isRec=false, photoB64=null, accumulated='';
+var recog=null, isRec=false, photoB64=null, savedText='';
 
 function initSpeech(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){document.getElementById('notSup').style.display='block';return false;}
   recog=new SR();
   recog.lang='ko-KR';
-  recog.continuous=false;
+  recog.continuous=true;
   recog.interimResults=true;
   recog.onresult=function(e){
     var fin='',intr='';
@@ -141,8 +141,7 @@ function initSpeech(){
       if(e.results[i].isFinal)fin+=e.results[i][0].transcript;
       else intr+=e.results[i][0].transcript;
     }
-    if(fin)accumulated+=fin;
-    document.getElementById('taMain').value=accumulated+intr;
+    document.getElementById('taMain').value=savedText+fin+intr;
     setSt('🎤 인식 중...',true);
   };
   recog.onerror=function(e){
@@ -152,7 +151,10 @@ function initSpeech(){
     stopRec();
   };
   recog.onend=function(){
-    if(isRec)setTimeout(function(){try{recog.start();}catch(x){}},150);
+    if(isRec){
+      savedText=document.getElementById('taMain').value;
+      setTimeout(function(){try{recog.start();}catch(x){}},150);
+    }
   };
   return true;
 }
@@ -160,7 +162,7 @@ function initSpeech(){
 function toggleRec(){
   if(isRec){stopRec();}
   else{
-    accumulated=document.getElementById('taMain').value;
+    savedText=document.getElementById('taMain').value;
     if(!recog&&!initSpeech())return;
     try{recog.start();}catch(x){recog=null;if(!initSpeech())return;recog.start();}
     isRec=true;
@@ -172,6 +174,7 @@ function toggleRec(){
 
 function stopRec(){
   isRec=false;
+  savedText='';
   if(recog)try{recog.stop();}catch(x){}
   document.getElementById('micBtn').classList.remove('rec');
   document.getElementById('micLbl').textContent='누르고 말하기';
@@ -203,7 +206,7 @@ function sendMain(){
   showLoader('ldMain',true);
   document.getElementById('resMain').style.display='none';
   callClaude({
-    model:'claude-sonnet-4-20250514',
+    model:'claude-haiku-4-5-20251001',
     max_tokens:1500,
     system:SYSTEM,
     messages:[{role:'user',content:text}]
@@ -252,7 +255,7 @@ function autoExtract(){
   var m=photoB64.match(re);
   var mt=m?m[1]:'image/jpeg';
   callClaude({
-    model:'claude-sonnet-4-20250514',
+    model:'claude-haiku-4-5-20251001',
     max_tokens:1500,
     messages:[{role:'user',content:[
       {type:'image',source:{type:'base64',media_type:mt,data:b64}},
