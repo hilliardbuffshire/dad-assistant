@@ -16,10 +16,10 @@
   --amber:#7A4800;--amber-bg:#FDF6E8;--amber-bd:#DEB96A;
   --r:12px;--r-lg:18px;--sh:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04);
 }
-body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0;}
+body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 .wrap{max-width:640px;margin:0 auto;padding:1.5rem 1rem 4rem;}
 .hdr{text-align:center;margin-bottom:2rem;}
-.hdr h1{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.3px;}
+.hdr h1{font-size:22px;font-weight:600;letter-spacing:-.3px;}
 .mic-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.75rem 1.25rem;margin-bottom:1rem;text-align:center;box-shadow:var(--sh);}
 .mic-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
 .mic-btn{width:100px;height:100px;border-radius:50%;border:2px solid var(--border2);background:var(--surface2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:all .2s;-webkit-tap-highlight-color:transparent;}
@@ -92,7 +92,7 @@ textarea::placeholder{color:var(--text3);}
   <div class="loader" id="ldMain"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>답변 생성 중...</span></div>
 
   <div class="result-card" id="resMain">
-    <div class="result-label">Claude 답변</div>
+    <div class="result-label">비서 답변</div>
     <div class="result-text" id="rbMain"></div>
     <button class="btn-copy" onclick="copyRes('rbMain',this)">📋 복사하기 (Daum 메일에 붙여넣기)</button>
   </div>
@@ -123,9 +123,14 @@ textarea::placeholder{color:var(--text3);}
 </div>
 
 <script>
-var GKEY='AIzaSyDjO68VCISq1yiZvKFR2D-pxTInug9tmLk';
-var GURL='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-var SYSTEM='당신은 친절한 AI 비서입니다. 한국어로 답변합니다. 사용자가 법률 관련 질문(특히 토지, 환경, 농지, 부동산, 소송, 분쟁, 계약 등)을 하면 한국 법률 전문가로서 관련 법령, 절차, 권리, 대응 방법을 상세히 안내하고, 마지막에 "※ 이 내용은 참고용이며 중요한 결정은 변호사와 상담하세요."라고 명시하세요. 사용자가 이메일, 편지, 답장 작성을 요청하면 정중하고 자연스러운 한국어로 작성하고 제목도 포함하세요. 그 외 질문에는 친절하고 명확하게 답변하세요.';
+var APIURL='https://dad-assistant-proxy.hilliardbuffshire.workers.dev';
+var CASE_CONTEXT=''; // 소송 자료 요약 (PDF 처리 후 입력)
+var SYSTEM='당신은 친절하고 유능한 AI 법률 비서입니다. 항상 한국어로 답변합니다.\n\n'
+  +'소송·법률 관련 질문(토지, 환경, 농지, 부동산, 소송, 항소, 분쟁, 계약 등)에는 한국 법률 전문가로서 '
+  +'관련 법령·판례·절차·권리·대응 방법을 구체적으로 안내하고, 마지막에 '
+  +'"※ 이 내용은 참고용이며 중요한 결정은 반드시 변호사와 상담하세요."를 명시하세요.\n\n'
+  +'이메일·편지·답장·법률 문서 작성 요청에는 정중하고 명확한 한국어로 작성하고 제목도 포함하세요.\n\n'
+  +'소송 자료가 제공된 경우 반드시 해당 자료의 사실관계를 바탕으로 답변하세요.';
 
 var recog=null, isRec=false, photoB64=null, finalTranscript='';
 
@@ -148,8 +153,7 @@ function initSpeech(){
   recog.onerror=function(e){
     if(e.error==='no-speech'){setSt('🔴 듣고 있습니다...',true);return;}
     if(e.error==='not-allowed'){setSt('마이크 권한을 허용해 주세요.',false);stopRec();return;}
-    setSt('음성오류: '+e.error,false);
-    stopRec();
+    setSt('음성오류: '+e.error,false);stopRec();
   };
   recog.onend=function(){
     if(isRec){
@@ -163,21 +167,18 @@ function initSpeech(){
 }
 
 function toggleRec(){
-  if(isRec){stopRec();}
-  else{
-    finalTranscript=document.getElementById('taMain').value;
-    if(!recog&&!initSpeech())return;
-    try{recog.start();}catch(x){recog=null;if(!initSpeech())return;recog.start();}
-    isRec=true;
-    document.getElementById('micBtn').classList.add('rec');
-    document.getElementById('micLbl').textContent='멈추기';
-    setSt('🔴 듣고 있습니다...',true);
-  }
+  if(isRec){stopRec();return;}
+  finalTranscript=document.getElementById('taMain').value;
+  if(!recog&&!initSpeech())return;
+  try{recog.start();}catch(x){recog=null;if(!initSpeech())return;recog.start();}
+  isRec=true;
+  document.getElementById('micBtn').classList.add('rec');
+  document.getElementById('micLbl').textContent='멈추기';
+  setSt('🔴 듣고 있습니다...',true);
 }
 
 function stopRec(){
-  isRec=false;
-  finalTranscript='';
+  isRec=false;finalTranscript='';
   if(recog)try{recog.stop();}catch(x){}
   document.getElementById('micBtn').classList.remove('rec');
   document.getElementById('micLbl').textContent='누르고 말하기';
@@ -191,10 +192,10 @@ function setSt(msg,active){
   el.className='st-bar'+(active?' active':'');
 }
 
-function callGemini(contents,system,cb){
-  var body={contents:contents,generationConfig:{maxOutputTokens:1500}};
-  if(system)body.systemInstruction={parts:[{text:system}]};
-  fetch(GURL+'?key='+GKEY,{
+function callClaude(messages,system,cb){
+  var body={model:'claude-sonnet-4-5',max_tokens:2000,messages:messages};
+  if(system)body.system=system;
+  fetch(APIURL,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)
@@ -202,7 +203,7 @@ function callGemini(contents,system,cb){
     if(!t)throw new Error('응답이 없습니다.');
     var d=JSON.parse(t);
     if(d.error)throw new Error(d.error.message);
-    cb(null,d.candidates[0].content.parts[0].text);
+    cb(null,d.content[0].text);
   }).catch(function(e){cb(e.message,null);});
 }
 
@@ -212,26 +213,22 @@ function sendMain(){
   if(isRec)stopRec();
   showLoader('ldMain',true);
   document.getElementById('resMain').style.display='none';
-  callGemini(
-    [{role:'user',parts:[{text:text}]}],
-    SYSTEM,
-    function(err,result){
-      document.getElementById('rbMain').textContent=err?'오류: '+err:result;
-      document.getElementById('resMain').style.display='block';
-      showLoader('ldMain',false);
-    }
-  );
+  var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'');
+  callClaude([{role:'user',content:text}],sys,function(err,result){
+    document.getElementById('rbMain').textContent=err?'오류: '+err:result;
+    document.getElementById('resMain').style.display='block';
+    showLoader('ldMain',false);
+  });
 }
 
-function compressPhoto(dataUrl,callback){
+function compressPhoto(dataUrl,cb){
   var img=new Image();
   img.onload=function(){
     var MAX=1568,w=img.width,h=img.height;
     if(w>MAX||h>MAX){if(w>=h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
     var c=document.createElement('canvas');
-    c.width=w;c.height=h;
-    c.getContext('2d').drawImage(img,0,0,w,h);
-    callback(c.toDataURL('image/jpeg',0.85));
+    c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
+    cb(c.toDataURL('image/jpeg',0.85));
   };
   img.src=dataUrl;
 }
@@ -257,21 +254,15 @@ function autoExtract(){
   showLoader('ldPhoto',true);
   document.getElementById('resPhoto').style.display='none';
   var b64=photoB64.split(',')[1];
-  var re=new RegExp('data:(image[^;]+);');
-  var m=photoB64.match(re);
-  var mt=m?m[1]:'image/jpeg';
-  callGemini(
-    [{role:'user',parts:[
-      {inlineData:{mimeType:mt,data:b64}},
-      {text:'이 이미지에서 손으로 쓴 글씨나 인쇄된 텍스트를 빠짐없이 정확하게 읽어서 텍스트로만 변환해주세요. 설명 없이 텍스트 내용만 출력하세요.'}
-    ]}],
-    null,
-    function(err,result){
-      document.getElementById('rbPhoto').textContent=err?'오류: '+err:result;
-      document.getElementById('resPhoto').style.display='block';
-      showLoader('ldPhoto',false);
-    }
-  );
+  var mt=photoB64.match(/data:(image[^;]+);/);
+  callClaude([{role:'user',content:[
+    {type:'image',source:{type:'base64',media_type:mt?mt[1]:'image/jpeg',data:b64}},
+    {type:'text',text:'이 이미지에서 손으로 쓴 글씨나 인쇄된 텍스트를 빠짐없이 정확하게 읽어서 텍스트로만 변환해주세요. 설명 없이 텍스트 내용만 출력하세요.'}
+  ]}],null,function(err,result){
+    document.getElementById('rbPhoto').textContent=err?'오류: '+err:result;
+    document.getElementById('resPhoto').style.display='block';
+    showLoader('ldPhoto',false);
+  });
 }
 
 function clearPhoto(){
@@ -294,31 +285,21 @@ function copyRes(id,btn){
   var text=document.getElementById(id).textContent;
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(function(){
-      var orig=btn.textContent;btn.textContent='✅ 복사 완료!';
-      setTimeout(function(){btn.textContent=orig;},2000);
+      var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
     });
   } else {
-    var ta=document.createElement('textarea');ta.value=text;
-    document.body.appendChild(ta);ta.select();document.execCommand('copy');
-    document.body.removeChild(ta);
-    var orig=btn.textContent;btn.textContent='✅ 복사 완료!';
-    setTimeout(function(){btn.textContent=orig;},2000);
+    var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
   }
 }
 
-function showLoader(id,show){
-  document.getElementById(id).className='loader'+(show?' on':'');
-}
+function showLoader(id,show){document.getElementById(id).className='loader'+(show?' on':'');}
 
-// 업로드존 클릭 & 드래그앤드롭 이벤트 (inline onclick 대신 addEventListener 사용)
 document.addEventListener('DOMContentLoaded',function(){
   var uz=document.getElementById('uploadZone');
   var pi=document.getElementById('photoInput');
-
   uz.addEventListener('click',function(){pi.click();});
-  pi.addEventListener('change',function(){
-    if(pi.files&&pi.files[0])handlePhoto(pi.files[0]);
-  });
+  pi.addEventListener('change',function(){if(pi.files&&pi.files[0])handlePhoto(pi.files[0]);});
   uz.addEventListener('dragover',function(e){e.preventDefault();uz.classList.add('drag');});
   uz.addEventListener('dragleave',function(){uz.classList.remove('drag');});
   uz.addEventListener('drop',function(e){
