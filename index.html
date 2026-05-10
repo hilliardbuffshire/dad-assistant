@@ -138,6 +138,8 @@ textarea::placeholder{color:var(--text3);}
 
 <script>
 var APIURL='https://dad-assistant-proxy.hilliardbuffshire.workers.dev';
+var UPDATES_URL='https://raw.githubusercontent.com/hilliardbuffshire/dad-assistant/main/case_updates.txt';
+var CASE_UPDATES='';
 var CASE_CONTEXT=`================================================================
 법률 소송 사건 구조화 요약문
 작성일: 2026-05-09
@@ -917,7 +919,7 @@ function sendMain(){
   finalTranscript='';
   setSt('답변 생성 중...',true);
   showLoader('ldMain',true);
-  var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'');
+  var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'');
   callClaude([{role:'user',content:text}],sys,function(err,result){
     showLoader('ldMain',false);
     chatHistory.push({role:'assistant',text:err?'오류: '+err:result,time:t});
@@ -996,6 +998,14 @@ function showLoader(id,show){document.getElementById(id).className='loader'+(sho
 
 document.addEventListener('DOMContentLoaded',function(){
   loadHistory();
+  fetch(UPDATES_URL+'?t='+Date.now())
+    .then(function(r){return r.text();})
+    .then(function(t){
+      var trimmed=t.trim();
+      if(trimmed&&!trimmed.startsWith('#'))CASE_UPDATES=trimmed;
+      else if(trimmed)CASE_UPDATES=trimmed.split('\n').filter(function(l){return !l.startsWith('#');}).join('\n').trim();
+    })
+    .catch(function(){});
   var uz=document.getElementById('uploadZone');
   var pi=document.getElementById('photoInput');
   uz.addEventListener('click',function(){pi.click();});
