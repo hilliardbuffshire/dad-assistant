@@ -965,7 +965,7 @@ function clearTagFilter(){
 }
 
 function callClaude(messages,system,cb){
-  var body={model:'claude-sonnet-4-5',max_tokens:8000,messages:messages};
+  var body={model:'claude-sonnet-4-5',max_tokens:16000,messages:messages};
   if(system)body.system=system;
   fetch(APIURL,{
     method:'POST',
