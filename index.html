@@ -68,6 +68,13 @@ textarea::placeholder{color:var(--text3);}
 .warn{display:flex;gap:9px;align-items:flex-start;padding:10px 13px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--r);font-size:12px;color:var(--amber);margin-top:1.5rem;line-height:1.55;}
 .not-sup{display:none;padding:10px 13px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:var(--r);font-size:13px;color:var(--red);margin-bottom:1rem;}
 #printFrame{display:none;}
+.copy-popup-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.copy-popup-overlay.on{display:flex;}
+.copy-popup-box{background:#fff;border-radius:18px;padding:2rem 1.75rem;max-width:320px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18);}
+.copy-popup-icon{font-size:48px;margin-bottom:.75rem;}
+.copy-popup-title{font-size:18px;font-weight:700;color:var(--green);margin-bottom:.5rem;}
+.copy-popup-msg{font-size:14px;color:var(--text2);line-height:1.65;margin-bottom:1.25rem;}
+.copy-popup-btn{width:100%;padding:13px;background:var(--text);border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;}
 @media print{
   @page{size:A4 portrait;margin:2cm 2cm 2.5cm 2cm;}
   .wrap{display:none!important;}
@@ -839,7 +846,7 @@ function renderHistory(filter){
       html+='<div class="chat-a"><div class="chat-a-label">비서 답변 · '+escHtml(p.a.time)+'</div>'
           +'<div class="chat-a-text">'+escHtml(p.a.text)+'</div>'
           +'<div class="btn-pair">'
-          +'<button class="btn-copy" data-text="'+escAttr(p.a.text)+'" onclick="copyChat(this)">📋 복사하기</button>'
+          +'<button class="btn-copy" data-idx="'+p.aIdx+'" onclick="copyChat(this)">📋 복사하기</button>'
           +'<button class="btn-print-single" onclick="printSingle('+p.aIdx+')">🖨️ 인쇄하기</button>'
           +'</div></div>';
     }
@@ -865,16 +872,29 @@ function printSingle(idx){
   window.print();
 }
 
+function showCopyPopup(){document.getElementById('copyPopup').className='copy-popup-overlay on';}
+function hideCopyPopup(){document.getElementById('copyPopup').className='copy-popup-overlay';}
+
 function copyChat(btn){
-  var text=btn.getAttribute('data-text');
-  var o=btn.textContent;
-  function done(){btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);}
-  if(navigator.clipboard){
+  var idx=parseInt(btn.getAttribute('data-idx'),10);
+  var entry=chatHistory[idx];
+  var text=entry?entry.text:'';
+  if(!text)return;
+  function done(){showCopyPopup();}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(done).catch(function(){
-      var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+      var ta=document.createElement('textarea');
+      ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.focus();ta.select();
+      try{document.execCommand('copy');}catch(e){}
+      document.body.removeChild(ta);done();
     });
   } else {
-    var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+    var ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);done();
   }
 }
 
@@ -1027,5 +1047,13 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 <div id="printFrame"></div>
+<div class="copy-popup-overlay" id="copyPopup" onclick="hideCopyPopup()">
+  <div class="copy-popup-box" onclick="event.stopPropagation()">
+    <div class="copy-popup-icon">✅</div>
+    <div class="copy-popup-title">복사 완료!</div>
+    <div class="copy-popup-msg">답변이 클립보드에 복사되었습니다.<br>이메일 본문에서 <strong>우클릭 → 붙여넣기</strong>를 하시면<br>내용을 바로 넣을 수 있습니다.</div>
+    <button class="copy-popup-btn" onclick="hideCopyPopup()">확인</button>
+  </div>
+</div>
 </body>
 </html>
