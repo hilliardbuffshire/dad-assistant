@@ -789,6 +789,10 @@ function escHtml(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function escAttr(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function renderHistory(filter){
   var log=document.getElementById('chatLog');
   var sw=document.getElementById('searchWrap');
@@ -832,11 +836,10 @@ function renderHistory(filter){
         +'<div class="chat-q-label">나 · '+escHtml(p.q.time)+'</div>'
         +'<div class="chat-q">'+escHtml(p.q.text)+'</div></div>';
     if(p.a){
-      var safeText=p.a.text.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
       html+='<div class="chat-a"><div class="chat-a-label">비서 답변 · '+escHtml(p.a.time)+'</div>'
           +'<div class="chat-a-text">'+escHtml(p.a.text)+'</div>'
           +'<div class="btn-pair">'
-          +'<button class="btn-copy" onclick="copyChat(this,\''+safeText+'\')">📋 복사하기</button>'
+          +'<button class="btn-copy" data-text="'+escAttr(p.a.text)+'" onclick="copyChat(this)">📋 복사하기</button>'
           +'<button class="btn-print-single" onclick="printSingle('+p.aIdx+')">🖨️ 인쇄하기</button>'
           +'</div></div>';
     }
@@ -862,15 +865,16 @@ function printSingle(idx){
   window.print();
 }
 
-function copyChat(btn,text){
-  var decoded=text.replace(/\\n/g,'\n').replace(/\\'/g,"'").replace(/\\\\/g,'\\');
+function copyChat(btn){
+  var text=btn.getAttribute('data-text');
+  var o=btn.textContent;
+  function done(){btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);}
   if(navigator.clipboard){
-    navigator.clipboard.writeText(decoded).then(function(){
-      var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
+    navigator.clipboard.writeText(text).then(done).catch(function(){
+      var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
     });
   } else {
-    var ta=document.createElement('textarea');ta.value=decoded;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
-    var o=btn.textContent;btn.textContent='✅ 복사 완료!';setTimeout(function(){btn.textContent=o;},2000);
+    var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
   }
 }
 
