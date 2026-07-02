@@ -38,6 +38,13 @@ textarea:focus{outline:none;border-color:var(--border2);}
 textarea::placeholder{color:var(--text3);}
 .btn-ask{width:100%;padding:14px;background:var(--text);border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
 .btn-ask:hover{opacity:.85;}.btn-ask:active{opacity:.7;}
+.btn-attach{width:100%;padding:13px;background:var(--surface);border:1.5px dashed var(--border2);border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
+.btn-attach:hover{border-color:var(--green-bd);background:var(--green-bg);color:var(--green);}
+.attach-list{display:flex;flex-direction:column;gap:6px;margin-bottom:.75rem;}
+.attach-chip{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:13px;color:var(--green);}
+.attach-chip .chip-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
+.attach-chip .chip-remove{cursor:pointer;font-size:17px;color:var(--text3);line-height:1;padding:0 4px;flex:0 0 auto;-webkit-tap-highlight-color:transparent;}
+.attach-chip .chip-remove:hover{color:var(--red);}
 .loader{display:none;align-items:center;gap:10px;font-size:13px;color:var(--text2);padding:8px 0 4px;justify-content:center;}
 .loader.on{display:flex;}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--text3);animation:bounce 1s ease-in-out infinite;}
@@ -107,6 +114,10 @@ textarea::placeholder{color:var(--text3);}
     <div class="ta-label">인식된 내용 (수정 가능)</div>
     <textarea id="taMain" placeholder="말씀하시면 여기에 내용이 나타납니다."></textarea>
   </div>
+
+  <input type="file" id="fileInput" multiple accept="image/*,application/pdf,.txt,.md,.csv,.log" style="display:none" onchange="handleFiles(this.files)">
+  <button class="btn-attach" onclick="document.getElementById('fileInput').click()"><span>📎</span> 파일 첨부 (사진·PDF·문서)</button>
+  <div class="attach-list" id="attachList"></div>
 
   <button class="btn-ask" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
 
@@ -738,6 +749,10 @@ var SYSTEM='당신은 정상문 씨의 실질적인 법률 비서입니다. 항�
   +'- 항목을 나열할 때는 1. 2. 3. 또는 가. 나. 다. 형식을 사용하세요.\n'
   +'- 편지·서신·내용증명·법률 문서 작성 요청 시: 문서 본문만 작성하세요. 앞뒤로 설명, 안내 문구(예: "이렇게 보내시면 됩니다", "다음과 같이 작성했습니다" 등)를 절대 추가하지 마세요. 복사하면 바로 편지가 되어야 합니다.\n\n'
   +'소송 자료가 제공된 경우 반드시 해당 자료의 사실관계를 바탕으로 답변하고, 자료에 없는 내용은 없다고 밝히세요.\n\n'
+  +'[첨부 파일 규칙]\n'
+  +'- 사용자가 파일(사진, PDF, 텍스트 문서)을 첨부한 경우, 그 파일의 내용을 꼼꼼히 읽고 분석하여 답변하거나 요청한 문서를 작성하는 데 활용하세요.\n'
+  +'- 첨부 파일에 나온 사실관계(날짜, 금액, 이름, 조항 등)는 정확히 인용하고, 소송 자료와 다르거나 새로운 내용이 있으면 그 점을 짚어 주세요.\n'
+  +'- 사진·스캔 문서가 흐리거나 일부를 읽을 수 없으면 추측하지 말고 "이 부분은 잘 보이지 않습니다"라고 밝히세요.\n\n'
   +'[법령 인용 규칙]\n'
   +'- 소송 자료(판결문 등)에 명시된 법령 조항은 그대로 정확히 인용하세요. 예: 토양환경보전법 제10조의3, 민법 제766조 등.\n'
   +'- 소송 자료에 없는 법령이라도 확실히 아는 조항은 인용하되, 조항 번호까지 명시하세요. 예: 민사소송법 제288조(자백간주) 등.\n'
@@ -749,6 +764,8 @@ var SYSTEM='당신은 정상문 씨의 실질적인 법률 비서입니다. 항�
 
 var recog=null, isRec=false, finalTranscript='', baseText='';
 var chatHistory=[];
+var attachments=[]; // {name, kind:'image'|'pdf'|'text', mediaType, data, bytes}
+var MAX_TOTAL_BYTES=3.2*1024*1024; // Vercel 본문 4.5MB 한도 대비 안전 상한(base64 팽창 감안)
 var activeTag=null;
 var TAG_COLORS=[
   {bg:'#E8F4FD',bd:'#90C8F0',tx:'#1A5276'},
@@ -1003,19 +1020,101 @@ function callClaude(messages,system,cb){
   }).catch(function(e){cb(e.message,null);});
 }
 
+function attachTotalBytes(){
+  var t=0;
+  for(var i=0;i<attachments.length;i++)t+=attachments[i].bytes||0;
+  return t;
+}
+
+function handleFiles(fileList){
+  var files=Array.prototype.slice.call(fileList);
+  for(var i=0;i<files.length;i++)readOneFile(files[i]);
+  document.getElementById('fileInput').value='';
+}
+
+function readOneFile(f){
+  var name=f.name;
+  var type=f.type||'';
+  var lower=name.toLowerCase();
+  var isImage=type.indexOf('image/')===0;
+  var isPdf=type==='application/pdf'||/\.pdf$/.test(lower);
+  var isText=type.indexOf('text/')===0||/\.(txt|md|csv|log)$/.test(lower);
+  if(!isImage&&!isPdf&&!isText){
+    setSt('⚠️ '+name+': 지원하지 않는 형식입니다. 사진(JPG·PNG)·PDF·텍스트만 가능합니다. 한글(.hwp)·워드(.docx)는 PDF로 저장하거나 사진을 찍어 첨부하세요.',false);
+    return;
+  }
+  if(attachTotalBytes()+f.size>MAX_TOTAL_BYTES){
+    setSt('⚠️ 첨부 용량이 너무 큽니다(총 3MB 이하). 파일을 줄이거나 나눠서 첨부하세요.',false);
+    return;
+  }
+  var reader=new FileReader();
+  reader.onload=function(){
+    if(isText){
+      attachments.push({name:name,kind:'text',data:reader.result,bytes:f.size});
+    } else {
+      var res=reader.result; // data URL
+      var comma=res.indexOf(',');
+      var b64=comma>=0?res.slice(comma+1):res;
+      var mt=isPdf?'application/pdf':(type||'image/jpeg');
+      attachments.push({name:name,kind:isPdf?'pdf':'image',mediaType:mt,data:b64,bytes:f.size});
+    }
+    renderAttachments();
+    setSt('📎 파일이 첨부되었습니다. 질문과 함께 물어보세요.',false);
+  };
+  reader.onerror=function(){setSt('⚠️ '+name+' 읽기에 실패했습니다.',false);};
+  if(isText)reader.readAsText(f);
+  else reader.readAsDataURL(f);
+}
+
+function renderAttachments(){
+  var el=document.getElementById('attachList');
+  if(!attachments.length){el.innerHTML='';return;}
+  var h='';
+  for(var i=0;i<attachments.length;i++){
+    var a=attachments[i];
+    var icon=a.kind==='image'?'🖼️':(a.kind==='pdf'?'📄':'📃');
+    h+='<div class="attach-chip"><span>'+icon+'</span><span class="chip-name">'+escHtml(a.name)
+      +'</span><span class="chip-remove" onclick="removeAttach('+i+')">✕</span></div>';
+  }
+  el.innerHTML=h;
+}
+
+function removeAttach(i){
+  attachments.splice(i,1);
+  renderAttachments();
+}
+
 function sendMain(){
   var text=document.getElementById('taMain').value.trim();
-  if(!text){setSt('⚠️ 내용을 입력하거나 말씀해 주세요.',false);return;}
+  if(!text&&!attachments.length){setSt('⚠️ 내용을 입력하거나 파일을 첨부해 주세요.',false);return;}
+  if(!text)text='첨부한 파일을 읽고 내용을 정리해 주세요.';
   if(isRec)stopRec();
   var t=timeStr();
-  chatHistory.push({role:'user',text:text,time:t});
+  // API에 보낼 content 블록 구성 (첨부가 있으면 배열, 없으면 기존처럼 문자열)
+  var content=text;
+  var dispText=text;
+  if(attachments.length){
+    content=[];
+    var names=[];
+    for(var i=0;i<attachments.length;i++){
+      var a=attachments[i];
+      if(a.kind==='image')content.push({type:'image',source:{type:'base64',media_type:a.mediaType,data:a.data}});
+      else if(a.kind==='pdf')content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:a.data}});
+      else content.push({type:'text',text:'[첨부 파일: '+a.name+']\n'+a.data});
+      names.push(a.name);
+    }
+    content.push({type:'text',text:text});
+    dispText=text+'\n\n📎 첨부: '+names.join(', ');
+  }
+  chatHistory.push({role:'user',text:dispText,time:t});
   saveHistory();renderHistory();
   document.getElementById('taMain').value='';
   finalTranscript='';
+  attachments=[];renderAttachments();
   setSt('답변 생성 중...',true);
   document.getElementById('ldMain').className='loader on';
   var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'');
-  callClaude([{role:'user',content:text}],sys,function(err,result){
+  callClaude([{role:'user',content:content}],sys,function(err,result){
     document.getElementById('ldMain').className='loader';
     var aEntry={role:'assistant',text:err?'오류: '+err:result,time:t};
     chatHistory.push(aEntry);
