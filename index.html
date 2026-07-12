@@ -124,12 +124,15 @@ textarea::placeholder{color:var(--text3);}
     <textarea id="taMain" placeholder="말씀하시면 여기에 내용이 나타납니다."></textarea>
   </div>
 
-  <input type="file" id="fileInput" multiple accept="image/*,application/pdf,.txt,.md,.csv,.log" style="display:none" onchange="handleFiles(this.files)">
-  <button class="btn-attach" onclick="document.getElementById('fileInput').click()"><span>📎</span> 파일 첨부 (사진·PDF·문서)</button>
+  <input type="file" id="fileInput" multiple accept="image/*,application/pdf,.txt,.md,.csv,.log,.hwp,.hwpx,.docx" style="display:none" onchange="handleFiles(this.files)">
+  <button class="btn-attach" onclick="document.getElementById('fileInput').click()"><span>📎</span> 파일 첨부 (사진·PDF·한글·워드)</button>
   <div class="attach-list" id="attachList"></div>
 
   <div id="editWrap" style="display:none">
-    <div class="attach-help">궁금한 것을 물어보려면 ✉️ 버튼, 첨부한 서류 내용을 고치려면 📝 버튼을 눌러 주세요.</div>
+    <div class="attach-chip" id="sessionChip" style="display:none;background:#F5F0FF;border-color:#C4B0F0;color:#5B35B0;margin-bottom:6px;">
+      <span>📝</span><span class="chip-name" id="sessionChipName"></span><span class="chip-remove" onclick="clearEditSession()">✕</span>
+    </div>
+    <div class="attach-help" id="editHelp">궁금한 것을 물어보려면 ✉️ 버튼, 첨부한 서류 내용을 고치려면 📝 버튼을 눌러 주세요.</div>
     <button class="btn-edit" id="btnEdit" onclick="sendEdit()"><span>📝</span> 첨부한 서류 고치기</button>
   </div>
 
@@ -153,7 +156,7 @@ textarea::placeholder{color:var(--text3);}
 </div>
 
 <script>
-var APIURL='https://dad-assistant-proxy-vercel.vercel.app/api';
+var APIURL='https://dad-assistant-proxy-production.up.railway.app/api'; // Railway (대용량 지원, 타임아웃 없음). 구: dad-assistant-proxy-vercel.vercel.app/api
 var UPDATES_URL='https://raw.githubusercontent.com/hilliardbuffshire/dad-assistant/main/case_updates.txt';
 var CASE_UPDATES='';
 var CASE_CONTEXT=`================================================================
@@ -787,6 +790,7 @@ var EDIT_SYSTEM='당신은 정상문 씨의 법률 문서 수정 전문 비서�
   +'==================== 수정 내역 ====================\n'
   +'5. 구분선 아래에 고친 곳을 1. 2. 3. 번호로 나열하세요. 각 항목마다 어느 부분을, 어떻게 바꿨는지, 왜 바꿨는지를 한두 문장으로 쓰세요. 내용을 삭제한 경우 마커로 표시할 수 없으므로 여기에 "삭제: ..."로 기록하세요.\n\n'
   +'[수정 원칙]\n'
+  +'- 서류가 아무리 길어도 반드시 전체를 처음부터 끝까지 출력하세요. 분량을 줄이거나 "(이하 동일)", "...중략..." 등으로 중간을 생략하는 것을 절대 금지합니다. 출력이 끊기면 사용자가 이어쓰기를 요청할 것이니 끊긴 지점까지 최대한 충실히 쓰세요.\n'
   +'- 사용자가 요청한 부분만 고치고, 나머지 원문은 글자 그대로 보존하세요.\n'
   +'- 마크다운 기호(#, **, 불릿 등)를 쓰지 말고 순수 텍스트로만 작성하세요.\n'
   +'- 법 조항 번호를 추측해 쓰지 마세요. 확실하지 않으면 "(확인 필요: 변호사에게 조항 확인 요망)"으로 표시하세요.\n'
@@ -804,7 +808,7 @@ function marksToHtml(s){
 var recog=null, isRec=false, finalTranscript='', baseText='';
 var chatHistory=[];
 var attachments=[]; // {name, kind:'image'|'pdf'|'text', mediaType, data, bytes}
-var MAX_TOTAL_BYTES=3.2*1024*1024; // Vercel 본문 4.5MB 한도 대비 안전 상한(base64 팽창 감안)
+var MAX_TOTAL_BYTES=30*1024*1024; // Railway 프록시 45MB 한도 대비 안전 상한(base64 팽창 1.37배 감안)
 var activeTag=null;
 var TAG_COLORS=[
   {bg:'#E8F4FD',bd:'#90C8F0',tx:'#1A5276'},
@@ -901,6 +905,7 @@ function renderHistory(filter){
     if(p.a){
       var aHtml=p.a.kind==='edit'?marksToHtml(p.a.text):escHtml(p.a.text);
       var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (노란색 = 고친 부분)':'비서 답변';
+      if(p.a.kind==='edit'&&p.a.model)aLabel+=' · '+p.a.model;
       html+='<div class="chat-a"><div class="chat-a-label">'+aLabel+' · '+escHtml(p.a.time)+'</div>'
           +'<div class="chat-a-text">'+aHtml+'</div>'
           +'<div class="btn-pair">'
@@ -1062,27 +1067,41 @@ function callClaude(messages,system,cb){
 }
 
 function callFable(messages,system,cb){
-  var body={model:'claude-fable-5',max_tokens:32000,
-    output_config:{effort:'medium'},
-    fallbacks:[{model:'claude-opus-4-8'}],
-    messages:messages};
-  if(system)body.system=system;
-  fetch(APIURL,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  }).then(function(r){return r.text();}).then(function(t){
-    if(!t)throw new Error('응답이 없습니다.');
-    var d=JSON.parse(t);
-    if(d.error)throw new Error(d.error.message||'API 오류');
-    if(d.stop_reason==='refusal'){cb('REFUSAL',null,d);return;}
-    var txt='';
-    if(d.content)for(var i=0;i<d.content.length;i++){
-      if(d.content[i].type==='text')txt+=d.content[i].text;
-    }
-    if(!txt)throw new Error('빈 응답을 받았습니다.');
-    cb(null,txt,d);
-  }).catch(function(e){cb(e.message,null,null);});
+  // max_tokens에 도달해 잘리면 자동으로 이어쓰기 요청 (최대 3라운드)
+  var parts=[],rounds=0,MAX_ROUNDS=3,lastMeta=null;
+  function run(msgs){
+    var body={model:'claude-fable-5',max_tokens:64000,
+      output_config:{effort:'medium'},
+      fallbacks:[{model:'claude-opus-4-8'}],
+      messages:msgs};
+    if(system)body.system=system;
+    fetch(APIURL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    }).then(function(r){return r.text();}).then(function(t){
+      if(!t)throw new Error('응답이 없습니다.');
+      var d=JSON.parse(t);
+      if(d.error)throw new Error(d.error.message||'API 오류');
+      if(d.stop_reason==='refusal'){cb('REFUSAL',null,d);return;}
+      var txt='';
+      if(d.content)for(var i=0;i<d.content.length;i++){
+        if(d.content[i].type==='text')txt+=d.content[i].text;
+      }
+      if(!txt&&!parts.length)throw new Error('빈 응답을 받았습니다.');
+      parts.push(txt);lastMeta=d;rounds++;
+      if(d.stop_reason==='max_tokens'&&rounds<MAX_ROUNDS){
+        var cont=msgs.concat([
+          {role:'assistant',content:parts.join('')},
+          {role:'user',content:'위 출력이 중간에 끊겼습니다. 마지막 문자 바로 다음부터 이어서 끝까지 출력하세요. 이미 출력한 내용을 절대 반복하지 말고, 인사말이나 설명 없이 이어지는 본문만 쓰세요.'}
+        ]);
+        run(cont);
+        return;
+      }
+      cb(null,parts.join(''),lastMeta);
+    }).catch(function(e){cb(e.message,null,null);});
+  }
+  run(messages);
 }
 
 var editing=false,editTimer=null,editStart=0;
@@ -1111,20 +1130,46 @@ function stopEditLoader(){
   document.getElementById('ldEdit').className='loader';
 }
 
+var editSession=null; // {name, doc} — 마지막 수정본. 재첨부 없이 계속 수정 가능
+function clearEditSession(){editSession=null;updateEditWrap();setSt('서류 수정을 마쳤습니다. 이제 일반 질문을 하실 수 있습니다.',false);}
+function updateEditWrap(){
+  var wrap=document.getElementById('editWrap');
+  var help=document.getElementById('editHelp');
+  var chip=document.getElementById('sessionChip');
+  if(editSession){
+    chip.style.display='flex';
+    document.getElementById('sessionChipName').textContent='수정 중인 서류: '+editSession.name;
+    wrap.style.display='block';
+    help.textContent='📝 계속 고치려면 고칠 내용을 적고 아무 버튼이나 누르세요. 다른 질문을 하려면 위의 ✕를 눌러 서류를 닫아 주세요.';
+  }else{
+    chip.style.display='none';
+    if(attachments.length){
+      wrap.style.display='block';
+      help.textContent='궁금한 것을 물어보려면 ✉️ 버튼, 첨부한 서류 내용을 고치려면 📝 버튼을 눌러 주세요.';
+    }else{
+      wrap.style.display='none';
+    }
+  }
+}
+
 function sendEdit(){
   if(editing)return;
   var text=document.getElementById('taMain').value.trim();
-  if(!attachments.length){setSt('⚠️ 먼저 고칠 서류 파일을 첨부해 주세요.',false);return;}
+  if(!attachments.length&&!editSession){setSt('⚠️ 먼저 고칠 서류 파일을 첨부해 주세요.',false);return;}
   if(!text){setSt('⚠️ 어떻게 고칠지 위 칸에 적어 주세요. 예: 항소 이유 3번을 더 강하게 써 주세요.',false);return;}
   if(isRec)stopRec();
   var t=timeStr();
   var content=[],names=[];
+  if(editSession){
+    content.push({type:'text',text:'[현재 서류: '+editSession.name+' (직전 수정본)]\n'+editSession.doc});
+    names.push(editSession.name);
+  }
   for(var i=0;i<attachments.length;i++){
     var a=attachments[i];
     if(a.kind==='image')content.push({type:'image',source:{type:'base64',media_type:a.mediaType,data:a.data}});
     else if(a.kind==='pdf')content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:a.data}});
     else content.push({type:'text',text:'[첨부 서류: '+a.name+']\n'+a.data});
-    names.push(a.name);
+    if(names.indexOf(a.name)<0)names.push(a.name);
   }
   content.push({type:'text',text:'[수정 요청]\n'+text});
   chatHistory.push({role:'user',text:'📝 서류 수정 요청: '+text+'\n\n📎 서류: '+names.join(', '),time:t});
@@ -1143,15 +1188,18 @@ function sendEdit(){
       return;
     }
     var full=result;
-    if(meta&&meta.stop_reason==='max_tokens')full+='\n\n⚠️ 서류가 길어 뒷부분이 잘렸을 수 있습니다. 서류를 나눠서 다시 요청해 주세요.';
+    if(meta&&meta.stop_reason==='max_tokens')full+='\n\n⚠️ 서류가 매우 길어 자동 이어쓰기 한도(3회)까지 출력했지만 끝까지 닿지 못했습니다. "이어서 계속 써줘"라고 요청해 주세요.';
     var lastIdx=chatHistory.length;
-    chatHistory.push({role:'assistant',text:full,kind:'edit',time:t});
+    chatHistory.push({role:'assistant',text:full,kind:'edit',model:meta&&meta.model,time:t});
     saveHistory();
+    // 수정본을 세션에 저장 → 재첨부 없이 계속 수정 가능
+    var docBody=stripMarks(full.split('==================== 수정 내역')[0]).trim();
+    if(docBody)editSession={name:names.join(', '),doc:docBody};
     document.getElementById('taMain').value='';
     finalTranscript='';
     attachments=[];renderAttachments();
     renderHistory();
-    setSt('✅ 서류 수정 완료. 노란색 부분이 고쳐진 곳입니다.',false);
+    setSt('✅ 서류 수정 완료. 노란색 부분이 고쳐진 곳입니다. 계속 고치려면 요청을 적고 아무 버튼이나 누르세요.',false);
     window.scrollTo(0,0);
     getTag(text,stripMarks(full),function(tag){
       if(chatHistory[lastIdx])chatHistory[lastIdx].tag=tag;
@@ -1164,6 +1212,149 @@ function attachTotalBytes(){
   var t=0;
   for(var i=0;i<attachments.length;i++)t+=attachments[i].bytes||0;
   return t;
+}
+
+// ---------- 파일 형식 확장: hwp/hwpx/docx 텍스트 추출 + 대형 사진 자동 압축 ----------
+var LIB_URLS={
+  jszip:'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+  cfb:'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js'
+};
+var libPromises={};
+function loadLib(k){
+  if(libPromises[k])return libPromises[k];
+  libPromises[k]=new Promise(function(res,rej){
+    var s=document.createElement('script');
+    s.src=LIB_URLS[k];
+    s.onload=function(){res();};
+    s.onerror=function(){delete libPromises[k];rej(new Error('인터넷 연결을 확인해 주세요'));};
+    document.head.appendChild(s);
+  });
+  return libPromises[k];
+}
+function fileToArrayBuffer(f){
+  return new Promise(function(res,rej){
+    var r=new FileReader();
+    r.onload=function(){res(r.result);};
+    r.onerror=function(){rej(new Error('파일 읽기 실패'));};
+    r.readAsArrayBuffer(f);
+  });
+}
+// XML을 문서 순서로 걸으며 <t> 텍스트 수집, <p>마다 줄바꿈 (docx/hwpx 공용)
+function xmlWalkText(dom){
+  var out='';
+  var it=dom.createNodeIterator(dom.documentElement,1);
+  var n;
+  while((n=it.nextNode())){
+    if(n.localName==='p')out+='\n';
+    else if(n.localName==='t'){
+      for(var c=n.firstChild;c;c=c.nextSibling)if(c.nodeType===3)out+=c.nodeValue;
+    }
+  }
+  return out;
+}
+function extractDocxFile(f){
+  return Promise.all([loadLib('jszip'),fileToArrayBuffer(f)]).then(function(rr){
+    return JSZip.loadAsync(rr[1]);
+  }).then(function(zip){
+    var doc=zip.file('word/document.xml');
+    if(!doc)throw new Error('워드 본문을 찾지 못함');
+    return doc.async('string');
+  }).then(function(xml){
+    return xmlWalkText(new DOMParser().parseFromString(xml,'application/xml'));
+  });
+}
+function extractHwpxFile(f){
+  return Promise.all([loadLib('jszip'),fileToArrayBuffer(f)]).then(function(rr){
+    return JSZip.loadAsync(rr[1]);
+  }).then(function(zip){
+    var names=Object.keys(zip.files).filter(function(n){return /^Contents\/section\d+\.xml$/i.test(n);})
+      .sort(function(a,b){return parseInt(a.match(/\d+/)[0],10)-parseInt(b.match(/\d+/)[0],10);});
+    if(!names.length)throw new Error('한글 본문을 찾지 못함');
+    return Promise.all(names.map(function(n){return zip.file(n).async('string');}));
+  }).then(function(xmls){
+    var out='';
+    for(var k=0;k<xmls.length;k++)out+=xmlWalkText(new DOMParser().parseFromString(xmls[k],'application/xml'));
+    return out;
+  });
+}
+function inflateRaw(u8){
+  var ds=new DecompressionStream('deflate-raw');
+  return new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer()
+    .then(function(ab){return new Uint8Array(ab);});
+}
+// HWP v5 바이너리: CFB 컨테이너 → BodyText/SectionN(raw deflate) → HWPTAG_PARA_TEXT(67) 레코드의 UTF-16 텍스트
+function hwpRecordsToText(u8){
+  var dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  var pos=0,text='';
+  while(pos+4<=u8.byteLength){
+    var hdr=dv.getUint32(pos,true);pos+=4;
+    var tag=hdr&0x3FF;
+    var size=(hdr>>>20)&0xFFF;
+    if(size===0xFFF){if(pos+4>u8.byteLength)break;size=dv.getUint32(pos,true);pos+=4;}
+    if(pos+size>u8.byteLength)size=u8.byteLength-pos;
+    if(tag===67){
+      var end=pos+size,i=pos;
+      while(i+2<=end){
+        var ch=dv.getUint16(i,true);
+        if(ch>=32){text+=String.fromCharCode(ch);i+=2;}
+        else if(ch===10||ch===13){text+='\n';i+=2;}
+        else if(ch===9){text+='\t';i+=16;}       // 탭: 인라인 컨트롤(WCHAR 8개)
+        else if(ch>=24&&ch<=31){if(ch===24)text+='-';i+=2;}  // 문자 컨트롤
+        else if(ch===0){i+=2;}
+        else{i+=16;}                              // 확장/인라인 컨트롤(WCHAR 8개)
+      }
+      text+='\n';
+    }
+    pos+=size;
+  }
+  return text;
+}
+function extractHwpFile(f){
+  return Promise.all([loadLib('cfb'),fileToArrayBuffer(f)]).then(function(rr){
+    var cfb=CFB.read(new Uint8Array(rr[1]),{type:'buffer'});
+    var fhIdx=-1,secs=[];
+    for(var i=0;i<cfb.FullPaths.length;i++){
+      if(/FileHeader$/.test(cfb.FullPaths[i]))fhIdx=i;
+      var m=cfb.FullPaths[i].match(/BodyText\/Section(\d+)$/);
+      if(m)secs.push({n:parseInt(m[1],10),c:cfb.FileIndex[i].content});
+    }
+    if(fhIdx<0)throw new Error('한글(HWP) 파일이 아님');
+    var hd=new Uint8Array(cfb.FileIndex[fhIdx].content);
+    var sig=String.fromCharCode.apply(null,Array.prototype.slice.call(hd.subarray(0,17)));
+    if(sig.indexOf('HWP Document File')!==0)throw new Error('한글(HWP) 파일이 아님');
+    var flags=hd[36]|(hd[37]<<8)|(hd[38]<<16)|(hd[39]<<24);
+    if(flags&2)throw new Error('암호가 걸린 문서');
+    if(flags&4)throw new Error('배포용(편집제한) 문서');
+    var compressed=!!(flags&1);
+    if(!secs.length)throw new Error('본문을 찾지 못함');
+    secs.sort(function(a,b){return a.n-b.n;});
+    var chain=Promise.resolve('');
+    secs.forEach(function(s){
+      chain=chain.then(function(acc){
+        var u8=new Uint8Array(s.c);
+        var p=compressed?inflateRaw(u8):Promise.resolve(u8);
+        return p.then(function(raw){return acc+hwpRecordsToText(raw);});
+      });
+    });
+    return chain;
+  });
+}
+function compressImage(f){
+  return createImageBitmap(f).then(function(bmp){
+    var MAXD=2000,w=bmp.width,h=bmp.height,sc=Math.min(1,MAXD/Math.max(w,h));
+    var cv=document.createElement('canvas');
+    cv.width=Math.round(w*sc);cv.height=Math.round(h*sc);
+    cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+    return new Promise(function(res,rej){
+      cv.toBlob(function(b){
+        if(!b)return rej(new Error('압축 실패'));
+        var fr=new FileReader();
+        fr.onload=function(){var r=fr.result;var c=r.indexOf(',');res({b64:r.slice(c+1),bytes:b.size});};
+        fr.onerror=function(){rej(new Error('읽기 실패'));};
+        fr.readAsDataURL(b);
+      },'image/jpeg',0.85);
+    });
+  });
 }
 
 function handleFiles(fileList){
@@ -1179,36 +1370,65 @@ function readOneFile(f){
   var isImage=type.indexOf('image/')===0;
   var isPdf=type==='application/pdf'||/\.pdf$/.test(lower);
   var isText=type.indexOf('text/')===0||/\.(txt|md|csv|log)$/.test(lower);
-  if(!isImage&&!isPdf&&!isText){
-    setSt('⚠️ '+name+': 지원하지 않는 형식입니다. 사진(JPG·PNG)·PDF·텍스트만 가능합니다. 한글(.hwp)·워드(.docx)는 PDF로 저장하거나 사진을 찍어 첨부하세요.',false);
+  var isDocx=/\.docx$/.test(lower);
+  var isHwpx=/\.hwpx$/.test(lower);
+  var isHwp=/\.hwp$/.test(lower);
+  if(!isImage&&!isPdf&&!isText&&!isDocx&&!isHwpx&&!isHwp){
+    setSt('⚠️ '+name+': 지원하지 않는 형식입니다. 사진·PDF·한글(hwp/hwpx)·워드(docx)·텍스트만 가능합니다. 구형 워드(.doc)는 PDF로 저장해 첨부하세요.',false);
     return;
   }
   if(attachTotalBytes()+f.size>MAX_TOTAL_BYTES){
-    setSt('⚠️ 첨부 용량이 너무 큽니다(총 3MB 이하). 파일을 줄이거나 나눠서 첨부하세요.',false);
+    setSt('⚠️ 첨부 용량이 너무 큽니다(총 30MB 이하). 파일을 줄이거나 나눠서 첨부하세요.',false);
     return;
   }
-  var reader=new FileReader();
-  reader.onload=function(){
-    if(isText){
-      attachments.push({name:name,kind:'text',data:reader.result,bytes:f.size});
-    } else {
-      var res=reader.result; // data URL
-      var comma=res.indexOf(',');
-      var b64=comma>=0?res.slice(comma+1):res;
-      var mt=isPdf?'application/pdf':(type||'image/jpeg');
-      attachments.push({name:name,kind:isPdf?'pdf':'image',mediaType:mt,data:b64,bytes:f.size});
-    }
-    renderAttachments();
-    setSt('📎 파일이 첨부되었습니다. 질문과 함께 물어보세요.',false);
-  };
-  reader.onerror=function(){setSt('⚠️ '+name+' 읽기에 실패했습니다.',false);};
-  if(isText)reader.readAsText(f);
-  else reader.readAsDataURL(f);
+  if(isDocx||isHwpx||isHwp){
+    setSt('📄 '+name+' 내용을 읽는 중...',true);
+    var p=isDocx?extractDocxFile(f):(isHwpx?extractHwpxFile(f):extractHwpFile(f));
+    p.then(function(text){
+      text=(text||'').replace(/\n{3,}/g,'\n\n').trim();
+      if(!text)throw new Error('내용이 비어 있음');
+      attachments.push({name:name,kind:'text',data:text,bytes:text.length});
+      renderAttachments();
+      setSt('📎 '+name+' 첨부 완료. 질문과 함께 물어보세요.',false);
+    }).catch(function(e){
+      setSt('⚠️ '+name+' 내용을 읽지 못했습니다('+((e&&e.message)||e)+'). 한글/워드에서 PDF로 저장한 뒤 첨부해 주세요.',false);
+    });
+    return;
+  }
+  if(isImage&&f.size>1.5*1024*1024){
+    setSt('🖼️ '+name+' 사진 크기를 줄이는 중...',true);
+    compressImage(f).then(function(r){
+      attachments.push({name:name,kind:'image',mediaType:'image/jpeg',data:r.b64,bytes:r.bytes});
+      renderAttachments();
+      setSt('📎 파일이 첨부되었습니다(사진 자동 압축됨). 질문과 함께 물어보세요.',false);
+    }).catch(function(){readRaw();});
+    return;
+  }
+  readRaw();
+  function readRaw(){
+    var reader=new FileReader();
+    reader.onload=function(){
+      if(isText){
+        attachments.push({name:name,kind:'text',data:reader.result,bytes:f.size});
+      } else {
+        var res=reader.result; // data URL
+        var comma=res.indexOf(',');
+        var b64=comma>=0?res.slice(comma+1):res;
+        var mt=isPdf?'application/pdf':(type||'image/jpeg');
+        attachments.push({name:name,kind:isPdf?'pdf':'image',mediaType:mt,data:b64,bytes:f.size});
+      }
+      renderAttachments();
+      setSt('📎 파일이 첨부되었습니다. 질문과 함께 물어보세요.',false);
+    };
+    reader.onerror=function(){setSt('⚠️ '+name+' 읽기에 실패했습니다.',false);};
+    if(isText)reader.readAsText(f);
+    else reader.readAsDataURL(f);
+  }
 }
 
 function renderAttachments(){
   var el=document.getElementById('attachList');
-  document.getElementById('editWrap').style.display=attachments.length?'block':'none';
+  updateEditWrap();
   if(!attachments.length){el.innerHTML='';return;}
   var h='';
   for(var i=0;i<attachments.length;i++){
@@ -1227,6 +1447,8 @@ function removeAttach(i){
 
 function sendMain(){
   if(editing)return;
+  // 서류 수정 세션 중에는 어느 버튼을 눌러도 동일하게 계속 수정
+  if(editSession){sendEdit();return;}
   var text=document.getElementById('taMain').value.trim();
   if(!text&&!attachments.length){setSt('⚠️ 내용을 입력하거나 파일을 첨부해 주세요.',false);return;}
   if(!text)text='첨부한 파일을 읽고 내용을 정리해 주세요.';
