@@ -33,13 +33,22 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .st-bar.active{color:var(--red);border-color:var(--red-bd);background:var(--red-bg);}
 .ta-wrap{margin-bottom:1rem;}
 .ta-label{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:6px;}
-textarea{width:100%;min-height:90px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:15px;font-family:'Noto Sans KR',sans-serif;color:var(--text);line-height:1.65;resize:vertical;}
+textarea{width:100%;min-height:170px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:15px;font-family:'Noto Sans KR',sans-serif;color:var(--text);line-height:1.65;resize:vertical;}
 textarea:focus{outline:none;border-color:var(--border2);}
 textarea::placeholder{color:var(--text3);}
 .btn-ask{width:100%;padding:14px;background:var(--text);border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
 .btn-ask:hover{opacity:.85;}.btn-ask:active{opacity:.7;}
 .btn-attach{width:100%;padding:13px;background:var(--surface);border:1.5px dashed var(--border2);border-radius:var(--r);font-size:14px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
 .btn-attach:hover{border-color:var(--green-bd);background:var(--green-bg);color:var(--green);}
+.attach-help{font-size:12px;color:var(--text2);text-align:center;margin-bottom:6px;line-height:1.5;}
+.btn-edit{width:100%;padding:14px;background:#5B35B0;border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
+.btn-edit:hover{opacity:.85;}.btn-edit:active{opacity:.7;}
+.btn-ask:disabled,.btn-edit:disabled{opacity:.45;cursor:not-allowed;}
+.chat-a-text mark{background:#FFE58A;color:inherit;padding:0 2px;border-radius:3px;}
+.drop-overlay{display:none;position:fixed;inset:0;background:rgba(42,92,20,.12);z-index:9998;align-items:center;justify-content:center;pointer-events:none;}
+.drop-overlay.on{display:flex;}
+.drop-box{background:#fff;border:3px dashed var(--green-bd);border-radius:18px;padding:2.5rem 3rem;font-size:20px;font-weight:600;color:var(--green);box-shadow:0 8px 32px rgba(0,0,0,.15);}
+@media (max-width:480px){textarea{min-height:140px;}}
 .attach-list{display:flex;flex-direction:column;gap:6px;margin-bottom:.75rem;}
 .attach-chip{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:13px;color:var(--green);}
 .attach-chip .chip-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
@@ -119,9 +128,15 @@ textarea::placeholder{color:var(--text3);}
   <button class="btn-attach" onclick="document.getElementById('fileInput').click()"><span>📎</span> 파일 첨부 (사진·PDF·문서)</button>
   <div class="attach-list" id="attachList"></div>
 
-  <button class="btn-ask" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
+  <div id="editWrap" style="display:none">
+    <div class="attach-help">궁금한 것을 물어보려면 ✉️ 버튼, 첨부한 서류 내용을 고치려면 📝 버튼을 눌러 주세요.</div>
+    <button class="btn-edit" id="btnEdit" onclick="sendEdit()"><span>📝</span> 첨부한 서류 고치기</button>
+  </div>
+
+  <button class="btn-ask" id="btnAsk" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
 
   <div class="loader" id="ldMain"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>답변 생성 중...</span></div>
+  <div class="loader" id="ldEdit"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span id="ldEditMsg">서류를 꼼꼼히 읽는 중...</span></div>
 
   <div class="tag-filter-bar" id="tagFilterBar">
     <span id="tagFilterLabel"></span>
@@ -762,6 +777,30 @@ var SYSTEM='당신은 정상문 씨의 실질적인 법률 비서입니다. 항�
   +'- 답변은 반드시 완전한 문장으로 끝내세요. 절대 중간에 끊기지 않도록 하세요.\n'
   +'- 항목 나열 중에 답변이 끊길 것 같으면, 나열을 줄이고 "이상입니다." 또는 "추가 질문 있으시면 말씀해 주세요."로 마무리하세요.';
 
+var MARK_O='⟦수정⟧',MARK_C='⟦/수정⟧';
+var EDIT_SYSTEM='당신은 정상문 씨의 법률 문서 수정 전문 비서입니다. 사용자가 첨부한 서류(항소이유서, 준비서면, 내용증명 등)를 수정 요청에 따라 고칩니다. 항상 한국어로 작성합니다.\n\n'
+  +'[출력 형식 - 반드시 지키세요]\n'
+  +'1. 먼저 수정된 문서 전체를 처음부터 끝까지 출력하세요. 수정하지 않은 부분도 원문 그대로 빠짐없이 포함해야 합니다.\n'
+  +'2. 문서 안에서 고치거나 새로 추가한 부분만 '+MARK_O+' 와 '+MARK_C+' 사이에 넣으세요. 예: 원고는 '+MARK_O+'2026. 4. 24.까지'+MARK_C+' 항소를 제기하였습니다.\n'
+  +'3. 마커('+MARK_O+MARK_C+')는 반드시 짝을 맞추고, 문서 본문이 아닌 곳(수정 내역 등)에는 절대 쓰지 마세요.\n'
+  +'4. 문서가 끝나면 반드시 아래 구분선을 한 줄로 넣으세요:\n'
+  +'==================== 수정 내역 ====================\n'
+  +'5. 구분선 아래에 고친 곳을 1. 2. 3. 번호로 나열하세요. 각 항목마다 어느 부분을, 어떻게 바꿨는지, 왜 바꿨는지를 한두 문장으로 쓰세요. 내용을 삭제한 경우 마커로 표시할 수 없으므로 여기에 "삭제: ..."로 기록하세요.\n\n'
+  +'[수정 원칙]\n'
+  +'- 사용자가 요청한 부분만 고치고, 나머지 원문은 글자 그대로 보존하세요.\n'
+  +'- 마크다운 기호(#, **, 불릿 등)를 쓰지 말고 순수 텍스트로만 작성하세요.\n'
+  +'- 법 조항 번호를 추측해 쓰지 마세요. 확실하지 않으면 "(확인 필요: 변호사에게 조항 확인 요망)"으로 표시하세요.\n'
+  +'- 첨부 서류가 흐리거나 읽을 수 없는 부분은 추측하지 말고 수정 내역에 그 사실을 명시하세요.\n'
+  +'- 제공된 소송 자료의 사실관계와 첨부 서류가 다르면 수정 내역에서 그 차이를 짚어 주세요.';
+
+function stripMarks(s){return String(s).split(MARK_O).join('').split(MARK_C).join('');}
+function marksToHtml(s){
+  var html=escHtml(s).split(MARK_O).join('<mark>').split(MARK_C).join('</mark>');
+  var opens=(html.match(/<mark>/g)||[]).length,closes=(html.match(/<\/mark>/g)||[]).length;
+  while(closes<opens){html+='</mark>';closes++;}
+  return html;
+}
+
 var recog=null, isRec=false, finalTranscript='', baseText='';
 var chatHistory=[];
 var attachments=[]; // {name, kind:'image'|'pdf'|'text', mediaType, data, bytes}
@@ -833,7 +872,7 @@ function renderHistory(filter){
   for(var j=pairs.length-1;j>=0;j--){
     var p=pairs[j];
     if(activeTag&&(!p.a||p.a.tag!==activeTag))continue;
-    if(kw&&!(p.q.text.toLowerCase().indexOf(kw)>=0||(p.a&&p.a.text.toLowerCase().indexOf(kw)>=0)))continue;
+    if(kw&&!(p.q.text.toLowerCase().indexOf(kw)>=0||(p.a&&stripMarks(p.a.text).toLowerCase().indexOf(kw)>=0)))continue;
     filtered.push(p);
   }
   if(!filtered.length){
@@ -860,8 +899,10 @@ function renderHistory(filter){
         +'<div class="chat-q-label">나 · '+escHtml(p.q.time)+'</div>'
         +'<div class="chat-q">'+escHtml(p.q.text)+'</div></div>';
     if(p.a){
-      html+='<div class="chat-a"><div class="chat-a-label">비서 답변 · '+escHtml(p.a.time)+'</div>'
-          +'<div class="chat-a-text">'+escHtml(p.a.text)+'</div>'
+      var aHtml=p.a.kind==='edit'?marksToHtml(p.a.text):escHtml(p.a.text);
+      var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (노란색 = 고친 부분)':'비서 답변';
+      html+='<div class="chat-a"><div class="chat-a-label">'+aLabel+' · '+escHtml(p.a.time)+'</div>'
+          +'<div class="chat-a-text">'+aHtml+'</div>'
           +'<div class="btn-pair">'
           +'<button class="btn-copy" data-idx="'+p.aIdx+'" onclick="copyChat(this)">📋 복사하기</button>'
           +'<button class="btn-print-single" onclick="printSingle('+p.aIdx+')">🖨️ 인쇄하기</button>'
@@ -884,7 +925,7 @@ function printSingle(idx){
     html+='<div class="pf-divider"></div>';
   }
   html+='<div class="pf-a-label">답변 · '+escHtml(asst.time)+'</div>';
-  html+='<div class="pf-a">'+escHtml(asst.text)+'</div>';
+  html+='<div class="pf-a">'+escHtml(stripMarks(asst.text))+'</div>';
   frame.innerHTML=html;
   window.print();
 }
@@ -895,7 +936,7 @@ function hideCopyPopup(){document.getElementById('copyPopup').className='copy-po
 function copyChat(btn){
   var idx=parseInt(btn.getAttribute('data-idx'),10);
   var entry=chatHistory[idx];
-  var text=entry?entry.text:'';
+  var text=entry?stripMarks(entry.text):'';
   if(!text)return;
   function done(){showCopyPopup();}
   if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -1020,6 +1061,105 @@ function callClaude(messages,system,cb){
   }).catch(function(e){cb(e.message,null);});
 }
 
+function callFable(messages,system,cb){
+  var body={model:'claude-fable-5',max_tokens:32000,
+    output_config:{effort:'medium'},
+    fallbacks:[{model:'claude-opus-4-8'}],
+    messages:messages};
+  if(system)body.system=system;
+  fetch(APIURL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  }).then(function(r){return r.text();}).then(function(t){
+    if(!t)throw new Error('응답이 없습니다.');
+    var d=JSON.parse(t);
+    if(d.error)throw new Error(d.error.message||'API 오류');
+    if(d.stop_reason==='refusal'){cb('REFUSAL',null,d);return;}
+    var txt='';
+    if(d.content)for(var i=0;i<d.content.length;i++){
+      if(d.content[i].type==='text')txt+=d.content[i].text;
+    }
+    if(!txt)throw new Error('빈 응답을 받았습니다.');
+    cb(null,txt,d);
+  }).catch(function(e){cb(e.message,null,null);});
+}
+
+var editing=false,editTimer=null,editStart=0;
+var EDIT_STAGES=['서류를 꼼꼼히 읽는 중','고칠 부분을 찾는 중','문장을 고치는 중','수정 내역을 정리하는 중','거의 다 됐습니다'];
+function startEditLoader(){
+  editing=true;editStart=Date.now();
+  document.getElementById('btnAsk').disabled=true;
+  document.getElementById('btnEdit').disabled=true;
+  document.getElementById('ldEdit').className='loader on';
+  document.getElementById('ldEditMsg').textContent=EDIT_STAGES[0]+'...';
+  setSt('📝 서류 수정 중입니다. 화면을 닫지 마세요 (최대 3분)',true);
+  window.onbeforeunload=function(){return '서류 수정이 진행 중입니다. 화면을 닫으면 결과가 사라집니다.';};
+  editTimer=setInterval(function(){
+    var s=Math.floor((Date.now()-editStart)/1000);
+    var stage=EDIT_STAGES[Math.min(Math.floor(s/30),EDIT_STAGES.length-1)];
+    var elapsed=s>=60?Math.floor(s/60)+'분 '+(s%60)+'초':s+'초';
+    document.getElementById('ldEditMsg').textContent=stage+'... ('+elapsed+' 경과)';
+  },1000);
+}
+function stopEditLoader(){
+  editing=false;
+  if(editTimer){clearInterval(editTimer);editTimer=null;}
+  window.onbeforeunload=null;
+  document.getElementById('btnAsk').disabled=false;
+  document.getElementById('btnEdit').disabled=false;
+  document.getElementById('ldEdit').className='loader';
+}
+
+function sendEdit(){
+  if(editing)return;
+  var text=document.getElementById('taMain').value.trim();
+  if(!attachments.length){setSt('⚠️ 먼저 고칠 서류 파일을 첨부해 주세요.',false);return;}
+  if(!text){setSt('⚠️ 어떻게 고칠지 위 칸에 적어 주세요. 예: 항소 이유 3번을 더 강하게 써 주세요.',false);return;}
+  if(isRec)stopRec();
+  var t=timeStr();
+  var content=[],names=[];
+  for(var i=0;i<attachments.length;i++){
+    var a=attachments[i];
+    if(a.kind==='image')content.push({type:'image',source:{type:'base64',media_type:a.mediaType,data:a.data}});
+    else if(a.kind==='pdf')content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:a.data}});
+    else content.push({type:'text',text:'[첨부 서류: '+a.name+']\n'+a.data});
+    names.push(a.name);
+  }
+  content.push({type:'text',text:'[수정 요청]\n'+text});
+  chatHistory.push({role:'user',text:'📝 서류 수정 요청: '+text+'\n\n📎 서류: '+names.join(', '),time:t});
+  saveHistory();renderHistory();
+  startEditLoader();
+  var sys=EDIT_SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'');
+  callFable([{role:'user',content:content}],sys,function(err,result,meta){
+    stopEditLoader();
+    if(err){
+      var msg=err==='REFUSAL'
+        ?'서류 수정 요청이 처리되지 못했습니다. 요청 문구를 조금 바꿔서 다시 한 번 눌러 주세요.'
+        :'서류 수정에 실패했습니다. 첨부하신 서류는 그대로 있으니, 잠시 후 📝 버튼을 다시 한 번만 눌러 주세요. 계속 안 되면 아들에게 연락해 주세요.\n(원인: '+err+')';
+      chatHistory.push({role:'assistant',text:msg,time:t});
+      saveHistory();renderHistory();
+      setSt('⚠️ 수정 실패. 첨부 서류와 요청 내용은 그대로 있습니다.',false);
+      return;
+    }
+    var full=result;
+    if(meta&&meta.stop_reason==='max_tokens')full+='\n\n⚠️ 서류가 길어 뒷부분이 잘렸을 수 있습니다. 서류를 나눠서 다시 요청해 주세요.';
+    var lastIdx=chatHistory.length;
+    chatHistory.push({role:'assistant',text:full,kind:'edit',time:t});
+    saveHistory();
+    document.getElementById('taMain').value='';
+    finalTranscript='';
+    attachments=[];renderAttachments();
+    renderHistory();
+    setSt('✅ 서류 수정 완료. 노란색 부분이 고쳐진 곳입니다.',false);
+    window.scrollTo(0,0);
+    getTag(text,stripMarks(full),function(tag){
+      if(chatHistory[lastIdx])chatHistory[lastIdx].tag=tag;
+      saveHistory();renderHistory(document.getElementById('searchInput').value);
+    });
+  });
+}
+
 function attachTotalBytes(){
   var t=0;
   for(var i=0;i<attachments.length;i++)t+=attachments[i].bytes||0;
@@ -1068,6 +1208,7 @@ function readOneFile(f){
 
 function renderAttachments(){
   var el=document.getElementById('attachList');
+  document.getElementById('editWrap').style.display=attachments.length?'block':'none';
   if(!attachments.length){el.innerHTML='';return;}
   var h='';
   for(var i=0;i<attachments.length;i++){
@@ -1085,6 +1226,7 @@ function removeAttach(i){
 }
 
 function sendMain(){
+  if(editing)return;
   var text=document.getElementById('taMain').value.trim();
   if(!text&&!attachments.length){setSt('⚠️ 내용을 입력하거나 파일을 첨부해 주세요.',false);return;}
   if(!text)text='첨부한 파일을 읽고 내용을 정리해 주세요.';
@@ -1133,6 +1275,36 @@ function sendMain(){
 }
 
 
+var dragDepth=0;
+function dragHasFiles(e){
+  var ts=e.dataTransfer&&e.dataTransfer.types;
+  if(!ts)return false;
+  for(var i=0;i<ts.length;i++)if(ts[i]==='Files')return true;
+  return false;
+}
+document.addEventListener('dragenter',function(e){
+  if(!dragHasFiles(e))return;
+  e.preventDefault();
+  dragDepth++;
+  document.getElementById('dropOverlay').className='drop-overlay on';
+});
+document.addEventListener('dragover',function(e){
+  if(!dragHasFiles(e))return;
+  e.preventDefault();
+});
+document.addEventListener('dragleave',function(e){
+  if(!dragHasFiles(e))return;
+  dragDepth--;
+  if(dragDepth<=0){dragDepth=0;document.getElementById('dropOverlay').className='drop-overlay';}
+});
+document.addEventListener('drop',function(e){
+  if(!dragHasFiles(e))return;
+  e.preventDefault();
+  dragDepth=0;
+  document.getElementById('dropOverlay').className='drop-overlay';
+  if(e.dataTransfer.files&&e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);
+});
+
 document.addEventListener('DOMContentLoaded',function(){
   loadHistory();
   fetch(UPDATES_URL+'?t='+Date.now())
@@ -1145,6 +1317,7 @@ document.addEventListener('DOMContentLoaded',function(){
     .catch(function(){});
 });
 </script>
+<div class="drop-overlay" id="dropOverlay"><div class="drop-box">📎 여기에 파일을 놓으세요</div></div>
 <div id="printFrame"></div>
 <div class="copy-popup-overlay" id="copyPopup" onclick="hideCopyPopup()">
   <div class="copy-popup-box" onclick="event.stopPropagation()">
