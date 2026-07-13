@@ -44,7 +44,7 @@ textarea::placeholder{color:var(--text3);}
 .btn-edit{width:100%;padding:14px;background:#5B35B0;border:none;border-radius:var(--r);font-size:15px;font-weight:600;font-family:'Noto Sans KR',sans-serif;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;-webkit-tap-highlight-color:transparent;margin-bottom:.75rem;}
 .btn-edit:hover{opacity:.85;}.btn-edit:active{opacity:.7;}
 .btn-ask:disabled,.btn-edit:disabled{opacity:.45;cursor:not-allowed;}
-.chat-a-text mark{background:#FFE58A;color:inherit;padding:0 2px;border-radius:3px;}
+.chat-a-text mark{background:none;color:#C0392B;font-weight:700;}
 .drop-overlay{display:none;position:fixed;inset:0;background:rgba(42,92,20,.12);z-index:9998;align-items:center;justify-content:center;pointer-events:none;}
 .drop-overlay.on{display:flex;}
 .drop-box{background:#fff;border:3px dashed var(--green-bd);border-radius:18px;padding:2.5rem 3rem;font-size:20px;font-weight:600;color:var(--green);box-shadow:0 8px 32px rgba(0,0,0,.15);}
@@ -804,6 +804,14 @@ function marksToHtml(s){
   while(closes<opens){html+='</mark>';closes++;}
   return html;
 }
+// 이메일에 붙여넣어도 고친 부분이 빨간 글자로 유지되도록 인라인 스타일 HTML 생성
+var MARK_SPAN_O='<span style="color:#C0392B;font-weight:bold">';
+function marksToInlineHtml(s){
+  var html=escHtml(s).split(MARK_O).join(MARK_SPAN_O).split(MARK_C).join('</span>');
+  var opens=(html.match(/color:#C0392B/g)||[]).length,closes=(html.match(/<\/span>/g)||[]).length;
+  while(closes<opens){html+='</span>';closes++;}
+  return '<div style="white-space:pre-wrap;font-family:\'Malgun Gothic\',sans-serif;font-size:15px;line-height:1.7">'+html+'</div>';
+}
 
 var recog=null, isRec=false, finalTranscript='', baseText='';
 var chatHistory=[];
@@ -904,7 +912,7 @@ function renderHistory(filter){
         +'<div class="chat-q">'+escHtml(p.q.text)+'</div></div>';
     if(p.a){
       var aHtml=p.a.kind==='edit'?marksToHtml(p.a.text):escHtml(p.a.text);
-      var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (노란색 = 고친 부분)':'비서 답변';
+      var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (빨간 글자 = 고친 부분)':'비서 답변';
       if(p.a.kind==='edit'&&p.a.model)aLabel+=' · '+p.a.model;
       html+='<div class="chat-a"><div class="chat-a-label">'+aLabel+' · '+escHtml(p.a.time)+'</div>'
           +'<div class="chat-a-text">'+aHtml+'</div>'
@@ -941,23 +949,32 @@ function hideCopyPopup(){document.getElementById('copyPopup').className='copy-po
 function copyChat(btn){
   var idx=parseInt(btn.getAttribute('data-idx'),10);
   var entry=chatHistory[idx];
-  var text=entry?stripMarks(entry.text):'';
+  if(!entry||!entry.text)return;
+  var text=stripMarks(entry.text);
   if(!text)return;
   function done(){showCopyPopup();}
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(done).catch(function(){
-      var ta=document.createElement('textarea');
-      ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
-      document.body.appendChild(ta);ta.focus();ta.select();
-      try{document.execCommand('copy');}catch(e){}
-      document.body.removeChild(ta);done();
-    });
-  } else {
+  function plainFallback(){
     var ta=document.createElement('textarea');
     ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
     document.body.appendChild(ta);ta.focus();ta.select();
     try{document.execCommand('copy');}catch(e){}
     document.body.removeChild(ta);done();
+  }
+  // 수정된 서류: 고친 부분을 빨간 글자 그대로 이메일에 붙일 수 있게 HTML로 복사
+  if(entry.kind==='edit'&&entry.text.indexOf(MARK_O)>=0&&navigator.clipboard&&window.ClipboardItem){
+    try{
+      var item=new ClipboardItem({
+        'text/html':new Blob([marksToInlineHtml(entry.text)],{type:'text/html'}),
+        'text/plain':new Blob([text],{type:'text/plain'})
+      });
+      navigator.clipboard.write([item]).then(done).catch(plainFallback);
+      return;
+    }catch(e){/* 미지원 브라우저 → 아래 일반 복사 */}
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(plainFallback);
+  } else {
+    plainFallback();
   }
 }
 
@@ -1070,9 +1087,8 @@ function callFable(messages,system,cb){
   // max_tokens에 도달해 잘리면 자동으로 이어쓰기 요청 (최대 3라운드)
   var parts=[],rounds=0,MAX_ROUNDS=3,lastMeta=null;
   function run(msgs){
-    var body={model:'claude-fable-5',max_tokens:64000,
-      output_config:{effort:'medium'},
-      fallbacks:[{model:'claude-opus-4-8'}],
+    var body={model:'claude-opus-4-8',max_tokens:128000,
+      output_config:{effort:'high'},
       messages:msgs};
     if(system)body.system=system;
     fetch(APIURL,{
@@ -1105,21 +1121,20 @@ function callFable(messages,system,cb){
 }
 
 var editing=false,editTimer=null,editStart=0;
-var EDIT_STAGES=['서류를 꼼꼼히 읽는 중','고칠 부분을 찾는 중','문장을 고치는 중','수정 내역을 정리하는 중','거의 다 됐습니다'];
+var EDIT_STAGES=['서류를 꼼꼼히 읽는 중','고칠 부분을 찾는 중','문장을 정성껏 고치는 중','내용을 다시 검토하는 중','수정 내역을 정리하는 중','마무리하고 있습니다. 조금만 기다려 주세요'];
 function startEditLoader(){
   editing=true;editStart=Date.now();
   document.getElementById('btnAsk').disabled=true;
   document.getElementById('btnEdit').disabled=true;
   document.getElementById('ldEdit').className='loader on';
   document.getElementById('ldEditMsg').textContent=EDIT_STAGES[0]+'...';
-  setSt('📝 서류 수정 중입니다. 화면을 닫지 마세요 (최대 3분)',true);
+  setSt('📝 서류를 정성껏 수정하고 있습니다. 시간이 다소 걸릴 수 있으니 화면을 닫지 말고 기다려 주세요.',true);
   window.onbeforeunload=function(){return '서류 수정이 진행 중입니다. 화면을 닫으면 결과가 사라집니다.';};
   editTimer=setInterval(function(){
     var s=Math.floor((Date.now()-editStart)/1000);
     var stage=EDIT_STAGES[Math.min(Math.floor(s/30),EDIT_STAGES.length-1)];
-    var elapsed=s>=60?Math.floor(s/60)+'분 '+(s%60)+'초':s+'초';
-    document.getElementById('ldEditMsg').textContent=stage+'... ('+elapsed+' 경과)';
-  },1000);
+    document.getElementById('ldEditMsg').textContent=stage+'...';
+  },3000);
 }
 function stopEditLoader(){
   editing=false;
@@ -1199,7 +1214,7 @@ function sendEdit(){
     finalTranscript='';
     attachments=[];renderAttachments();
     renderHistory();
-    setSt('✅ 서류 수정 완료. 노란색 부분이 고쳐진 곳입니다. 계속 고치려면 요청을 적고 아무 버튼이나 누르세요.',false);
+    setSt('✅ 서류 수정 완료. 빨간 글자가 고쳐진 곳입니다. 계속 고치려면 요청을 적고 아무 버튼이나 누르세요.',false);
     window.scrollTo(0,0);
     getTag(text,stripMarks(full),function(tag){
       if(chatHistory[lastIdx])chatHistory[lastIdx].tag=tag;
@@ -1545,7 +1560,7 @@ document.addEventListener('DOMContentLoaded',function(){
   <div class="copy-popup-box" onclick="event.stopPropagation()">
     <div class="copy-popup-icon">✅</div>
     <div class="copy-popup-title">복사 완료!</div>
-    <div class="copy-popup-msg">답변이 복사되었습니다.<br>이메일 본문에서 <strong>우클릭 → 붙여넣기</strong>를 하시면<br>내용을 바로 넣을 수 있습니다.</div>
+    <div class="copy-popup-msg">복사되었습니다.<br>이메일 본문에서 <strong>우클릭 → 붙여넣기</strong> 하시면<br>내용이 그대로 들어갑니다.<br>(고친 서류는 빨간 글자까지 유지됩니다.)</div>
     <button class="copy-popup-btn" onclick="hideCopyPopup()">확인</button>
   </div>
 </div>
