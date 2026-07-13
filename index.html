@@ -159,6 +159,8 @@ textarea::placeholder{color:var(--text3);}
 var APIURL='https://dad-assistant-proxy-production.up.railway.app/api'; // Railway (대용량 지원, 타임아웃 없음). 구: dad-assistant-proxy-vercel.vercel.app/api
 var UPDATES_URL='https://raw.githubusercontent.com/hilliardbuffshire/dad-assistant/main/case_updates.txt';
 var CASE_UPDATES='';
+var DOCS_API='https://legal-doc-platform-production-96cf.up.railway.app/api/files'; // 서류 파인더 플랫폼(수시 업로드) — 여기 올라온 서류 요약을 모두 참고 자료로 사용
+var CASE_DOCS='';
 var CASE_CONTEXT=`================================================================
 법률 소송 사건 구조화 요약문
 작성일: 2026-05-09
@@ -1190,7 +1192,7 @@ function sendEdit(){
   chatHistory.push({role:'user',text:'📝 서류 수정 요청: '+text+'\n\n📎 서류: '+names.join(', '),time:t});
   saveHistory();renderHistory();
   startEditLoader();
-  var sys=EDIT_SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'');
+  var sys=EDIT_SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'')+(CASE_DOCS?'\n\n[서류 파인더 등록 서류]\n'+CASE_DOCS:'');
   callFable([{role:'user',content:content}],sys,function(err,result,meta){
     stopEditLoader();
     if(err){
@@ -1492,7 +1494,7 @@ function sendMain(){
   attachments=[];renderAttachments();
   setSt('답변 생성 중...',true);
   document.getElementById('ldMain').className='loader on';
-  var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'');
+  var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'')+(CASE_DOCS?'\n\n[서류 파인더 등록 서류]\n'+CASE_DOCS:'');
   callClaude([{role:'user',content:content}],sys,function(err,result){
     document.getElementById('ldMain').className='loader';
     var aEntry={role:'assistant',text:err?'오류: '+err:result,time:t};
@@ -1542,6 +1544,25 @@ document.addEventListener('drop',function(e){
   if(e.dataTransfer.files&&e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);
 });
 
+// 서류 파인더 플랫폼에 올라온 모든 서류의 제목·AI요약·메모를 참고 자료 텍스트로 구성
+function buildCaseDocs(files){
+  if(!files||!files.length)return '';
+  files=files.slice().sort(function(a,b){return (b.updated_at||0)-(a.updated_at||0);});
+  var out='아래는 정상문 씨 소송(2023가단62004, 2025가단4471) 서류 파인더에 등록된 서류 '+files.length+'건의 목록과 각 서류의 AI 요약입니다. 사용자의 질문에 답하거나 서류를 수정할 때 이 자료 전체를 근거로 활용하고, 관련 서류가 있으면 제목을 인용하세요.\n\n';
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    out+='━ '+(f.file_name||'(제목없음)');
+    if(f.star)out+='  [중요 '+f.star+'점]';
+    out+='\n';
+    var s=(f.summary||'').trim();
+    if(s&&s.indexOf('미리보기 미지원')<0&&s.indexOf('첨부 문서')!==0)out+=s+'\n';
+    if((f.comment||'').trim())out+='[원고 메모] '+f.comment.trim()+'\n';
+    if((f.lawyer_comment||'').trim())out+='[변호사 메모] '+f.lawyer_comment.trim()+'\n';
+    out+='\n';
+  }
+  return out.trim();
+}
+
 document.addEventListener('DOMContentLoaded',function(){
   loadHistory();
   fetch(UPDATES_URL+'?t='+Date.now())
@@ -1552,6 +1573,15 @@ document.addEventListener('DOMContentLoaded',function(){
       else if(trimmed)CASE_UPDATES=trimmed.split('\n').filter(function(l){return !l.startsWith('#');}).join('\n').trim();
     })
     .catch(function(){});
+  // 서류 파인더 자료: 캐시(롱텀 저장) 즉시 반영 후, 최신 상태로 갱신
+  try{var cd=localStorage.getItem('dad_case_docs');if(cd)CASE_DOCS=cd;}catch(e){}
+  fetch(DOCS_API+'?t='+Date.now())
+    .then(function(r){return r.json();})
+    .then(function(files){
+      var built=buildCaseDocs(files);
+      if(built){CASE_DOCS=built;try{localStorage.setItem('dad_case_docs',built);}catch(e){}}
+    })
+    .catch(function(){}); // 플랫폼이 꺼져 있어도 캐시로 계속 동작
 });
 </script>
 <div class="drop-overlay" id="dropOverlay"><div class="drop-box">📎 여기에 파일을 놓으세요</div></div>
