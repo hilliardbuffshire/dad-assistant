@@ -1250,16 +1250,23 @@ function attachTotalBytes(){
 // ---------- 파일 형식 확장: hwp/hwpx/docx 텍스트 추출 + 대형 사진 자동 압축 ----------
 var LIB_URLS={
   jszip:'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
-  cfb:'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js'
+  cfb:'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js',
+  pako:'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js'
 };
 var libPromises={};
+var LIB_GLOBAL={jszip:'JSZip',cfb:'CFB',pako:'pako'};
 function loadLib(k){
   if(libPromises[k])return libPromises[k];
   libPromises[k]=new Promise(function(res,rej){
+    // 1차: 스크립트 태그. 2차(실패 시): fetch+eval 폴백 (일부 환경의 스크립트 차단 대비)
     var s=document.createElement('script');
     s.src=LIB_URLS[k];
     s.onload=function(){res();};
-    s.onerror=function(){delete libPromises[k];rej(new Error('인터넷 연결을 확인해 주세요'));};
+    s.onerror=function(){
+      fetch(LIB_URLS[k]).then(function(r){if(!r.ok)throw 0;return r.text();})
+        .then(function(code){(0,eval)(code);if(window[LIB_GLOBAL[k]])res();else throw 0;})
+        .catch(function(){delete libPromises[k];rej(new Error('인터넷 연결을 확인해 주세요'));});
+    };
     document.head.appendChild(s);
   });
   return libPromises[k];
@@ -1310,10 +1317,22 @@ function extractHwpxFile(f){
     return out;
   });
 }
+// HWP BodyText는 raw deflate. 브라우저 DecompressionStream은 실제 한컴 스트림을 거부하므로 pako 사용(hwp.js 동일 방식)
 function inflateRaw(u8){
-  var ds=new DecompressionStream('deflate-raw');
-  return new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer()
-    .then(function(ab){return new Uint8Array(ab);});
+  return loadLib('pako').then(function(){return pako.inflateRaw(u8);});
+}
+// PrvText(무압축 UTF-16LE 미리보기) — 본문 추출 실패 시 폴백
+function hwpPrvText(cfb){
+  for(var i=0;i<cfb.FullPaths.length;i++){
+    if(/PrvText$/.test(cfb.FullPaths[i])){
+      var u8=new Uint8Array(cfb.FileIndex[i].content),s='';
+      var dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+      for(var j=0;j+2<=u8.byteLength;j+=2){var ch=dv.getUint16(j,true);
+        if(ch===13||ch===10)s+='\n';else if(ch)s+=String.fromCharCode(ch);}
+      return s;
+    }
+  }
+  return '';
 }
 // HWP v5 바이너리: CFB 컨테이너 → BodyText/SectionN(raw deflate) → HWPTAG_PARA_TEXT(67) 레코드의 UTF-16 텍스트
 function hwpRecordsToText(u8){
@@ -1359,17 +1378,22 @@ function extractHwpFile(f){
     if(flags&2)throw new Error('암호가 걸린 문서');
     if(flags&4)throw new Error('배포용(편집제한) 문서');
     var compressed=!!(flags&1);
-    if(!secs.length)throw new Error('본문을 찾지 못함');
+    if(!secs.length){var pv0=hwpPrvText(cfb);if(pv0.trim())return pv0;throw new Error('본문을 찾지 못함');}
     secs.sort(function(a,b){return a.n-b.n;});
     var chain=Promise.resolve('');
     secs.forEach(function(s){
       chain=chain.then(function(acc){
         var u8=new Uint8Array(s.c);
         var p=compressed?inflateRaw(u8):Promise.resolve(u8);
-        return p.then(function(raw){return acc+hwpRecordsToText(raw);});
+        return p.then(function(raw){return acc+hwpRecordsToText(raw);})
+                .catch(function(){return acc;}); // 한 섹션 실패해도 나머지 진행
       });
     });
-    return chain;
+    return chain.then(function(text){
+      // 본문 추출이 비면 PrvText(미리보기)로 폴백
+      if(!text||!text.trim()){var pv=hwpPrvText(cfb);if(pv.trim())return pv;}
+      return text;
+    });
   });
 }
 function compressImage(f){
