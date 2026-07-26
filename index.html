@@ -1075,7 +1075,8 @@ function callClaude(messages,system,cb){
   // 답변이 max_tokens에 걸려 잘리면 자동 이어쓰기 → 길이 제한 없이 끝까지 (최대 4라운드)
   var parts=[],rounds=0,MAX_ROUNDS=4;
   function run(msgs){
-    var body={model:'claude-sonnet-4-5',max_tokens:64000,messages:msgs};
+    // opus-4-8 = 1M 컨텍스트(구 sonnet-4-5 200K 초과 문제 해결) + 최고 답변 품질. adaptive thinking으로 추론 품질 확보
+    var body={model:'claude-opus-4-8',max_tokens:64000,thinking:{type:'adaptive'},messages:msgs};
     if(system)body.system=system;
     fetch(APIURL,{
       method:'POST',
