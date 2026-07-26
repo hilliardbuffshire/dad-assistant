@@ -126,6 +126,7 @@ textarea::placeholder{color:var(--text3);}
 
   <input type="file" id="fileInput" multiple accept="image/*,application/pdf,.txt,.md,.csv,.log,.hwp,.hwpx,.docx" style="display:none" onchange="handleFiles(this.files)">
   <button class="btn-attach" onclick="document.getElementById('fileInput').click()"><span>📎</span> 파일 첨부 (사진·PDF·한글·워드)</button>
+  <div class="attach-help" style="margin:-2px 0 8px">복사(캡처)한 사진은 <strong>Ctrl+V</strong>로 붙여넣어도 첨부됩니다.</div>
   <div class="attach-list" id="attachList"></div>
 
   <div id="editWrap" style="display:none">
@@ -1582,6 +1583,27 @@ document.addEventListener('drop',function(e){
   dragDepth=0;
   document.getElementById('dropOverlay').className='drop-overlay';
   if(e.dataTransfer.files&&e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);
+});
+// 클립보드 붙여넣기(Ctrl+V): 스니핑/캡처한 사진을 붙여넣으면 첨부. 텍스트 붙여넣기는 그대로 둠
+document.addEventListener('paste',function(e){
+  var items=(e.clipboardData&&e.clipboardData.items)||[];
+  var imgs=[];
+  for(var i=0;i<items.length;i++){
+    if(items[i].kind==='file'&&items[i].type.indexOf('image/')===0){
+      var f=items[i].getAsFile();
+      if(f)imgs.push(f);
+    }
+  }
+  if(!imgs.length)return; // 이미지가 없으면 기본 텍스트 붙여넣기 유지
+  e.preventDefault();
+  var stamp=timeStr().replace(/[^0-9]/g,'');
+  var named=imgs.map(function(f,idx){
+    var ext=((f.type.split('/')[1])||'png').replace('jpeg','jpg');
+    var nm='붙여넣은사진_'+stamp+(imgs.length>1?('_'+(idx+1)):'')+'.'+ext;
+    try{return new File([f],nm,{type:f.type});}catch(_){return f;}
+  });
+  handleFiles(named);
+  setSt('📎 사진을 붙여넣었습니다. 질문과 함께 물어보세요.',false);
 });
 
 // 서류 파인더 플랫폼에 올라온 모든 서류의 제목·AI요약·메모를 참고 자료 텍스트로 구성
