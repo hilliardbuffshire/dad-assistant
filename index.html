@@ -1537,7 +1537,16 @@ function sendMain(){
   setSt('답변 생성 중...',true);
   document.getElementById('ldMain').className='loader on';
   var sys=SYSTEM+(CASE_CONTEXT?'\n\n[소송 자료]\n'+CASE_CONTEXT:'')+(CASE_UPDATES?'\n\n[추가 자료]\n'+CASE_UPDATES:'')+(CASE_DOCS?'\n\n[서류 파인더 등록 서류]\n'+CASE_DOCS:'');
-  callClaude([{role:'user',content:content}],sys,function(err,result){
+  // 최근 대화(최대 6쌍)를 함께 보내 이어지는 질문 지원. 과거 턴은 텍스트만(첨부 데이터 재전송 안 함), 현재 턴만 첨부 포함
+  var msgs=[];
+  var recent=chatHistory.slice(0,-1).slice(-12);
+  while(recent.length&&recent[0].role!=='user')recent.shift();
+  for(var mi=0;mi<recent.length;mi++){
+    var h=recent[mi],ht=stripMarks(h.text||'').trim();
+    if(ht)msgs.push({role:h.role==='assistant'?'assistant':'user',content:ht});
+  }
+  msgs.push({role:'user',content:content});
+  callClaude(msgs,sys,function(err,result){
     document.getElementById('ldMain').className='loader';
     var aEntry={role:'assistant',text:err?'오류: '+err:result,time:t};
     chatHistory.push(aEntry);
