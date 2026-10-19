@@ -144,6 +144,7 @@ textarea::placeholder{color:var(--text3);}
   </div>
 
   <button class="btn-ask" id="btnAsk" onclick="sendMain()"><span>✉️</span> 비서에게 물어보기</button>
+  <button class="btn-attach" id="btnFind" onclick="sendLocal()"><span>🔍</span> 저장된 서류에서 바로 찾기 (무료 · 크레딧 사용 안 함)</button>
 
   <div class="loader" id="ldMain"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>답변 생성 중...</span></div>
   <div class="loader" id="ldEdit"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span id="ldEditMsg">서류를 꼼꼼히 읽는 중...</span></div>
@@ -172,23 +173,100 @@ var CASE_DOCS='';
 var SEARCH_API='https://legal-doc-platform-production-96cf.up.railway.app/api/search'; // 서류 전체 판독 결과에서 질문 관련 구간·원문 쪽 검색
 
 // 질문(+직전 질문)으로 서류 파인더 전문 검색 → 관련 구간 요약·원문 쪽을 근거 블록으로. 실패해도 답변은 계속(빈 문자열)
-function fetchRelevant(q,cb){
+function fetchRelevantRaw(q,cb){
   var done=false;
-  var timer=setTimeout(function(){if(!done){done=true;cb('');}},10000);
+  var timer=setTimeout(function(){if(!done){done=true;cb([]);}},10000);
   fetch(SEARCH_API+'?k=10&budget=30000&q='+encodeURIComponent(q.slice(0,1500)))
     .then(function(r){return r.json();})
-    .then(function(rs){
-      if(done)return;done=true;clearTimeout(timer);
-      if(!rs||!rs.length){cb('');return;}
-      var out='';
-      for(var i=0;i<rs.length;i++){
-        var r=rs[i];
-        out+='━ '+r.title+' / '+(r.kind==='원문'?'원문 p.'+r.pages:r.kind==='전체요약'?'전체 요약':'상세 요약 p.'+r.pages)+'\n'+r.text+'\n\n';
-      }
-      cb(out.trim());
-    })
-    .catch(function(){if(!done){done=true;clearTimeout(timer);cb('');}});
+    .then(function(rs){if(!done){done=true;clearTimeout(timer);cb(Array.isArray(rs)?rs:[]);}})
+    .catch(function(){if(!done){done=true;clearTimeout(timer);cb([]);}});
 }
+function fetchRelevant(q,cb){
+  fetchRelevantRaw(q,function(rs){
+    var out='';
+    for(var i=0;i<rs.length;i++){
+      var r=rs[i];
+      out+='━ '+r.title+' / '+(r.kind==='원문'?'원문 p.'+r.pages:r.kind==='전체요약'?'전체 요약':'상세 요약 p.'+r.pages)+'\n'+r.text+'\n\n';
+    }
+    cb(out.trim());
+  });
+}
+
+// ── 무료 모드: AI 없이, 저장해 둔 서류 판독 결과에서 질문과 맞는 부분을 그대로 찾아 보여줌(크레딧 0) ──
+function qTokens(q){
+  var out=[];
+  (q.match(/[가-힣]+|[A-Za-z]+|\d[\d,\.]*\d|\d/g)||[]).forEach(function(w){
+    if(/[가-힣]/.test(w.charAt(0))){if(w.length===1)return;for(var i=0;i<w.length-1;i++)out.push(w.substr(i,2));}
+    else out.push(w.toLowerCase().replace(/,/g,''));
+  });
+  return out;
+}
+function textScore(t,toks){
+  var l=String(t).replace(/,/g,'').toLowerCase(),s=0;
+  for(var i=0;i<toks.length;i++)if(l.indexOf(toks[i])>=0)s++;
+  return s;
+}
+// 긴 글에서 질문 단어가 가장 많이 몰린 줄을 중심으로 max 글자 정도만 잘라 보여줌
+function bestSnippet(text,toks,max){
+  var lines=String(text).split('\n').filter(function(x){return x.trim();});
+  if(!lines.length)return '';
+  var bi=0,bs=-1;
+  for(var i=0;i<lines.length;i++){var s=textScore(lines[i],toks);if(s>bs){bs=s;bi=i;}}
+  var a=bi,b=bi,len=lines[bi].length;
+  while(len<max&&(a>0||b<lines.length-1)){
+    if(b<lines.length-1){b++;len+=lines[b].length;}
+    if(len<max&&a>0){a--;len+=lines[a].length;}
+  }
+  var out=lines.slice(a,b+1).join('\n');
+  return (a>0?'…\n':'')+(out.length>max+300?out.slice(0,max+300)+'…':out)+(b<lines.length-1?'\n…':'');
+}
+function shortTitle(t){
+  var s=String(t).replace(/\.pdf$/i,'').split('／');
+  return (s[0]+(s[1]?'／'+s[1]:'')).trim();
+}
+function localAnswer(q,rs){
+  var toks=qTokens(q);
+  var out='🔍 저장된 서류에서 찾은 내용입니다. (AI가 새로 쓴 답이 아니라, 미리 읽어 둔 서류 내용을 그대로 보여 드립니다 · 크레딧 사용 안 함)\n\n';
+  var n=0;
+  // 1) 서류 파인더 전체 판독 결과(구간 요약·원문 쪽) — 관련도 순
+  var seen={};
+  for(var j=0;j<rs.length&&n<6;j++){
+    var r=rs[j],m=/^\[(\d+)\]/.exec(r.title||''),num=m?parseInt(m[1],10):null;
+    var key=r.title+'|'+r.pages;if(seen[key])continue;seen[key]=1;
+    var where=r.kind==='원문'?r.pages+'쪽 원문':r.kind==='전체요약'?'서류 전체 요약':r.pages+'쪽 요약';
+    var firstPage=r.kind==='전체요약'?'':String(r.pages).split('~')[0];
+    n++;
+    out+=n+'. '+shortTitle(r.title)+' — '+where+'\n'
+      +(num?'⟦서류:'+num+(firstPage?':'+firstPage:'')+'⟧\n':'')
+      +bestSnippet(r.text,toks,700)+'\n\n';
+  }
+  // 2) 내장 소송 자료·추가 정리 자료에서 질문 낱말이 절반 이상 들어 있는 문단만 1개
+  var paras=(CASE_UPDATES+'\n\n'+CASE_CONTEXT).split(/\n\s*\n/).filter(function(p){return p.trim().length>30;});
+  var ps=paras.map(function(p){return {p:p,s:textScore(p,toks)};}).filter(function(x){return toks.length&&x.s>=Math.max(3,toks.length*0.5);})
+    .sort(function(a,b){return b.s-a.s;}).slice(0,1);
+  for(var i=0;i<ps.length;i++){n++;out+=n+'. [정리해 둔 소송 자료]\n'+bestSnippet(ps[i].p,toks,600)+'\n\n';}
+  if(!n)return '저장된 서류에서 질문과 맞는 내용을 찾지 못했습니다. 다른 낱말(사람 이름, 날짜, 금액, 서류 이름 등)로 다시 찾아 보세요.';
+  return out.trim()+'\n\n※ 더 자세한 설명이나 서류 작성이 필요하면 ✉️ 비서에게 물어보기를 이용하세요(크레딧 사용).';
+}
+function sendLocal(){
+  if(editing)return;
+  var text=document.getElementById('taMain').value.trim();
+  if(!text){setSt('⚠️ 찾을 내용을 위 칸에 적어 주세요. 예: 피고 항소이유서, 아연 검사 결과, 가압류 금액',false);return;}
+  if(isRec)stopRec();
+  var t=timeStr();
+  chatHistory.push({role:'user',text:'🔍 '+text,time:t});
+  saveHistory();renderHistory();
+  document.getElementById('taMain').value='';finalTranscript='';
+  setSt('저장된 서류에서 찾는 중...',true);
+  fetchRelevantRaw(text,function(rs){
+    chatHistory.push({role:'assistant',text:localAnswer(text,rs),kind:'local',time:t});
+    saveHistory();renderHistory();
+    setSt('✅ 찾기 완료. 아래를 확인하세요. 📄 버튼을 누르면 원본 서류가 열립니다.',false);
+    window.scrollTo(0,0);
+  });
+}
+// AI를 쓸 수 없는 오류(크레딧 소진·연결 실패 등)인지
+function isNoAiError(err){return /credit|balance|billing|insufficient|Failed to fetch|NetworkError|Load failed|overloaded|429|529|응답이 없습니다/i.test(String(err||''));}
 
 // 시스템 프롬프트: 고정 자료(캐시) + 질문별 검색 발췌(비캐시). 고정 부분은 5분 내 재질문 시 1/10 비용
 function buildSystem(base,excerpts){
@@ -977,7 +1055,7 @@ function renderHistory(filter){
         +'<div class="chat-q">'+escHtml(p.q.text)+'</div></div>';
     if(p.a){
       var aHtml=marksToHtml(p.a.text);
-      var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (빨간 글자 = 고친 부분)':(p.a.text.indexOf(MARK_O)>=0?'비서 답변 (빨간 글자 = 고친 부분)':'비서 답변');
+      var aLabel=p.a.kind==='edit'?'📝 수정된 서류 (빨간 글자 = 고친 부분)':p.a.kind==='local'?'🔍 저장된 서류에서 찾은 내용 (무료)':(p.a.text.indexOf(MARK_O)>=0?'비서 답변 (빨간 글자 = 고친 부분)':'비서 답변');
       if(p.a.kind==='edit'&&p.a.model)aLabel+=' · '+p.a.model;
       html+='<div class="chat-a"><div class="chat-a-label">'+aLabel+' · '+escHtml(p.a.time)+'</div>'
           +'<div class="chat-a-text">'+aHtml+'</div>'
@@ -1617,6 +1695,18 @@ function sendMain(){
   learnPrefs(text);
   fetchRelevant(text+'\n'+prevQ.slice(0,300),function(excerpts){
   callClaude(msgs,buildSystem(sysBase,excerpts),function(err,result){
+    // 크레딧 소진·연결 실패 시: 저장된 서류 판독 결과로 대신 답변(무료)
+    if(err&&isNoAiError(err)){
+      fetchRelevantRaw(text+'\n'+prevQ.slice(0,300),function(rs){
+        document.getElementById('ldMain').className='loader';
+        chatHistory.push({role:'assistant',kind:'local',time:t,
+          text:'⚠️ 지금은 AI 답변을 쓸 수 없어(크레딧 부족 또는 연결 문제), 저장해 둔 서류 내용으로 대신 보여 드립니다.\n\n'+localAnswer(text,rs)});
+        saveHistory();renderHistory();
+        setSt('✅ 저장된 서류에서 찾은 내용을 보여 드렸습니다.',false);
+        window.scrollTo(0,0);
+      });
+      return;
+    }
     document.getElementById('ldMain').className='loader';
     var aEntry={role:'assistant',text:err?'오류: '+err:result,time:t};
     chatHistory.push(aEntry);
